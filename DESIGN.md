@@ -363,8 +363,8 @@ The OpenAPI schema generates TypeScript types (`openapi-typescript`), so the fro
 - Honor any robots.txt changes, and back off on errors.
 
 **Robustness**
-- Store the raw HTML gzipped, so pages can be re-parsed without re-fetching.
-- Use saved pages as test fixtures.
+- Store the raw HTML gzipped in the gitignored `data/` folder, so pages can be re-parsed without re-fetching.
+- Test fixtures are trimmed copies that keep only factual fields (IDs, names, class, ranges, gauge links, geometry). They contain no descriptions, photos, or alert text, because the repo is public.
 - Alert when the payload shape changes.
 - Manual edits to `reach` and `reach_gauge` survive re-syncs.
 
@@ -474,6 +474,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-18 | The Outlook is a rolling window of today plus up to 5 days (6 max), not weekend-only. Model horizon is 144 h; `OUTLOOK_MAX_DAYS = 6` is configurable. |
 | 2026-10-18 | Runnable = in range at any point during daylight, with Low/Med/High bands plus personal overrides |
 | 2026-10-18 | Desktop-first UI |
+| 2026-10-18 | The GitHub repo is public. Scraped data and raw AW pages are never committed; test fixtures keep only factual fields. |
 
 ### Open questions (resolve in Phase 1 spikes)
 - How to discover AW reach IDs; the full list of AW gauge `source` types; whether our band split matches AW's status strings.
