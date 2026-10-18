@@ -235,11 +235,23 @@ def backfill(
     stats = BackfillStats()
     now = _now()
     ft_gauges = set(session.scalars(select(ReachGauge.gauge_id).where(ReachGauge.metric == "ft")))
-    query = select(Gauge).where(Gauge.source == "USGS").order_by(Gauge.source_id).limit(limit)
+    query = (
+        select(
+            Gauge.id, Gauge.source_id, Gauge.cfs_begin, Gauge.cfs_end, Gauge.ft_begin, Gauge.ft_end
+        )
+        .where(Gauge.source == "USGS")
+        .order_by(Gauge.source_id)
+        .limit(limit)
+    )
     if numbers:
         query = query.where(Gauge.source_id.in_(numbers))
 
-    for gauge in session.scalars(query):
+    gauges = session.execute(query).all()  # plain rows: still usable after the rollback
+    # End the read transaction before downloading for hours: an open transaction would
+    # block schema migrations, and a waiting migration blocks every other job.
+    session.rollback()
+
+    for gauge in gauges:
         periods = [("cfs", gauge.cfs_begin, gauge.cfs_end)]
         if gauge.id in ft_gauges:
             periods.append(("ft", gauge.ft_begin, gauge.ft_end))

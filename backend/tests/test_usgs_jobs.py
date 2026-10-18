@@ -184,3 +184,18 @@ def test_backfill_resumes_without_refetching_finished_years(session, tmp_path, h
         stats = jobs.backfill(client, session, data_dir=tmp_path, start_year=2002)
     assert first == 5
     assert stats.files_written == 0 and stats.files_skipped == 5
+
+
+def test_backfill_holds_no_transaction_while_downloading(session, tmp_path, history_gauge):
+    """An open transaction during a multi-hour download blocks migrations, and a waiting
+    migration blocks every other job (this happened once)."""
+    in_transaction = []
+
+    def history(start, end):
+        in_transaction.append(session.in_transaction())
+        return []
+
+    fake = FakeUSGS(history={("03192000", "00060"): history, ("03192000", "00065"): history})
+    with client_for(fake) as client:
+        jobs.backfill(client, session, data_dir=tmp_path, start_year=2002)
+    assert in_transaction and not any(in_transaction)
