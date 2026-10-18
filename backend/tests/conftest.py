@@ -44,9 +44,8 @@ def db_engine():
 
 @pytest.fixture
 def session(db_engine):
+    tables = "reach, gauge, reach_gauge, observation, noaa_forecast"
     with db_engine.begin() as conn:
-        conn.execute(
-            text("TRUNCATE reach, gauge, reach_gauge, observation RESTART IDENTITY CASCADE")
-        )
+        conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
     with Session(db_engine) as session:
         yield session

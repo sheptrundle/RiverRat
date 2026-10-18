@@ -50,6 +50,10 @@ uv run python -m riverrat.jobs.sync_reaches                # + reach details, ~2
 uv run python -m riverrat.jobs.usgs sites      # locations + periods of record
 uv run python -m riverrat.jobs.usgs live       # last 3 h of 15-min readings -> Postgres
 uv run python -m riverrat.jobs.usgs backfill   # 15-min history since 2002 -> data/usgs/iv/
+
+# NOAA forecasts (NWPS keeps no history, so archive every few hours)
+uv run python -m riverrat.jobs.noaa link       # gauges -> NWS location IDs + NWM reaches
+uv run python -m riverrat.jobs.noaa archive    # store new RFC + NWM short-range forecasts
 ```
 
 ### Web on the host

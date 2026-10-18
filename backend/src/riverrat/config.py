@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     # Stage IV rain records start in 2002, so earlier flow history isn't useful for training.
     history_start_year: int = 2002
     observation_retention_days: int = 60
+    nwps_request_interval_s: float = 1.0
     data_dir: Path = _REPO_ROOT / "data"
 
 

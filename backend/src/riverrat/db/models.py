@@ -3,7 +3,7 @@
 from datetime import date, datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import DateTime, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -71,6 +71,11 @@ class Gauge(Base):
     ft_begin: Mapped[datetime | None]
     ft_end: Mapped[datetime | None]
     metadata_synced_at: Mapped[datetime | None]
+    # NOAA links: NWS location ID (forecast points only) and the NWM reach (NHDPlus COMID).
+    nws_lid: Mapped[str | None] = mapped_column(String(8))
+    nwm_reach_id: Mapped[int | None] = mapped_column(BigInteger)
+    has_rfc_forecast: Mapped[bool] = mapped_column(default=False, server_default="false")
+    noaa_linked_at: Mapped[datetime | None]
 
 
 class ReachGauge(Base):
@@ -107,3 +112,20 @@ class Observation(Base):
     value: Mapped[float]
     approved: Mapped[bool]
     qualifier: Mapped[str | None] = mapped_column(String(32))
+
+
+class NoaaForecast(Base):
+    """Archived NOAA flow forecasts, kept forever for benchmarking (DESIGN.md §6.7).
+    `source` is "rfc" (official River Forecast Center) or "nwm_short" (National Water
+    Model short range). `issued_at` is the RFC issue time or the NWM reference time."""
+
+    __tablename__ = "noaa_forecast"
+
+    gauge_id: Mapped[int] = mapped_column(
+        ForeignKey("gauge.id", ondelete="CASCADE"), primary_key=True
+    )
+    source: Mapped[str] = mapped_column(String(16), primary_key=True)
+    issued_at: Mapped[datetime] = mapped_column(primary_key=True)
+    valid_time: Mapped[datetime] = mapped_column(primary_key=True)
+    flow_cfs: Mapped[float | None]
+    stage_ft: Mapped[float | None]
