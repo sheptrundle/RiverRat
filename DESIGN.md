@@ -351,7 +351,8 @@ The OpenAPI schema generates TypeScript types (`openapi-typescript`), so the fro
 **Approach** (owner decision: scrape AW's public pages)
 - Fetch `/content/River/view/river-detail/{id}/main`.
 - Extract the `self.__next_f.push([1,"…"])` chunks, unescape them, and concatenate them.
-- Pull out the JSON objects (`stub`, `geometry`, the sidebar props including `correlations`, `nextRelease`, `alerts`) with a balanced-brace extractor keyed on property names.
+- Pull out only the JSON objects we need (`stub`, `geometry`, and the sidebar props with `length`, `averageGradient`, `correlations`, `nextRelease`) with a balanced-brace extractor keyed on property names.
+- **Facts only.** We keep river and section name, class, length, gradient, put-in/take-out geometry, gauge links (source, ID, primary flag), flow ranges, and next release date. Descriptions, photos, trip reports, and user-written alerts are never extracted or stored.
 - Validate the result with Pydantic models.
 
 **Discovery of reach IDs** *(Phase 1 spike)*: use state index pages if they expose IDs; otherwise do a polite crawl over the ID range and record which IDs exist.
@@ -363,8 +364,8 @@ The OpenAPI schema generates TypeScript types (`openapi-typescript`), so the fro
 - Honor any robots.txt changes, and back off on errors.
 
 **Robustness**
-- Store the raw HTML gzipped in the gitignored `data/` folder, so pages can be re-parsed without re-fetching.
-- Test fixtures are trimmed copies that keep only factual fields (IDs, names, class, ranges, gauge links, geometry). They contain no descriptions, photos, or alert text, because the repo is public.
+- Raw HTML is parsed in memory and discarded; only the extracted facts are stored (as JSON in the gitignored `data/` folder and in Postgres).
+- Test fixtures are minimal synthetic pages containing only the factual fields above.
 - Alert when the payload shape changes.
 - Manual edits to `reach` and `reach_gauge` survive re-syncs.
 
@@ -376,7 +377,7 @@ The OpenAPI schema generates TypeScript types (`openapi-typescript`), so the fro
 **Ethics and permission**
 - Scraping is acceptable for a private tool.
 - **Before any public launch**, ask AW for permission or a data feed. AW is a member-funded nonprofit, so join and offer to share our forecasts back.
-- Never republish reach descriptions; show summary fields plus a "Read on AW" link, and attribute AW prominently.
+- We never collect descriptions in the first place; reach pages link to AW ("Read on AW") and attribute AW prominently.
 - Because AW sits behind an adapter, switching to an official feed or to manual curation means changing one module.
 
 ## 11. Frontend (desktop-first)
@@ -474,7 +475,8 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-18 | The Outlook is a rolling window of today plus up to 5 days (6 max), not weekend-only. Model horizon is 144 h; `OUTLOOK_MAX_DAYS = 6` is configurable. |
 | 2026-10-18 | Runnable = in range at any point during daylight, with Low/Med/High bands plus personal overrides |
 | 2026-10-18 | Desktop-first UI |
-| 2026-10-18 | The GitHub repo is public. Scraped data and raw AW pages are never committed; test fixtures keep only factual fields. |
+| 2026-10-18 | The GitHub repo is public. Scraped data and raw AW pages are never committed. |
+| 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)
 - How to discover AW reach IDs; the full list of AW gauge `source` types; whether our band split matches AW's status strings.
