@@ -25,7 +25,7 @@ web/dist/
 *.tsbuildinfo
 
 # Data lake, raw caches, model artifacts. Never commit scraped or downloaded data.
-/data/
+/data
 
 # iCloud-excluded folders (see README)
 *.nosync

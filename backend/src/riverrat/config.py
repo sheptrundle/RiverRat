@@ -24,6 +24,15 @@ class Settings(BaseSettings):
     aw_request_interval_s: float = 5.0
     aw_refresh_days: int = 7
 
+    # USGS Water Data API (DESIGN.md §4.2). The key allows 1,000 requests/hour; a 4 s
+    # interval leaves headroom for live polling while a backfill runs.
+    usgs_api_key: str | None = None
+    usgs_request_interval_s: float = 4.0
+    # Stage IV rain records start in 2002, so earlier flow history isn't useful for training.
+    history_start_year: int = 2002
+    observation_retention_days: int = 60
+    data_dir: Path = _REPO_ROOT / "data"
+
 
 @lru_cache
 def get_settings() -> Settings:

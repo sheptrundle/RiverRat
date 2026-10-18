@@ -98,7 +98,7 @@ Everything below was checked as live on 2026-10-18 unless marked *(verify in spi
 ### 4.2 Gauges: observations and NOAA flow forecasts
 | Source | What we use it for | Access | Notes |
 |---|---|---|---|
-| **USGS Water Data OGC API** `api.waterdata.usgs.gov/ogcapi/v0` | Live and historical discharge (param 00060, cfs) and stage (00065, ft); site metadata; drainage area | Collections `continuous`, `latest-continuous`, `daily`, `monitoring-locations`, `time-series-metadata`, `peaks`, `field-measurements`. A free API key gives higher rate limits (see the `X-RateLimit-*` headers). Python client: the `dataretrieval` **`waterdata`** module. | **Legacy `waterservices.usgs.gov` is decommissioned in Q1 2027, with degradation from Nov 2026. Never build on it.** How far back `continuous` goes is unknown *(verify)*; fall back to `daily` for old years. |
+| **USGS Water Data OGC API** `api.waterdata.usgs.gov/ogcapi/v0` | Live and historical discharge (param 00060, cfs) and stage (00065, ft); site metadata; drainage area | Collections `continuous`, `latest-continuous`, `daily`, `monitoring-locations`, `time-series-metadata`, `peaks`, `field-measurements`. A free API key (`X-Api-Key` header) allows 1,000 requests/hour. We call the API directly with our throttled client (`riverrat.sources.usgs`). | **Legacy `waterservices.usgs.gov` is decommissioned in Q1 2027, with degradation from Nov 2026. Never build on it.** 15-minute history goes back to the 1970s–1990s at many sites; we keep 2002 onward to match Stage IV. `continuous` takes one site per request or a bbox + time window for many; site and series metadata accept ID lists; CSV pages (≤ 50,000 rows) are ~6× smaller than JSON. |
 | **NOAA NWPS API** `api.water.noaa.gov/nwps/v1` | Observed flow plus the **official RFC forecast** (`/gauges/{id}/stageflow`); rating curves (`/gauges/{id}/ratings`); gauges upstream and downstream (`/gauges/{id}/riverflow`); **NWM forecasts per reach** (`/reaches/{reachId}/streamflow?series=short_range\|medium_range\|medium_range_blend\|long_range\|analysis_assimilation`) | REST/JSON. Accepts an NWS location ID or a USGS ID. | **No history.** We archive its forecasts ourselves from Phase 1. |
 | **NWM Retrospective v3.0** (AWS Open Data) | Simulated NWM flow for every reach, 1979–2023. Lets us bias-correct NWM without waiting for our own archive. | Zarr/NetCDF on S3 | NWM v3.1 was scheduled for operations in Aug 2026; record the model version. |
 | **USACE CWMS Data API** `cwms-data.usace.army.mil/cwms-data` | Reservoir outflow and pool level for regulated runs (Summersville, Bluestone, Gathright…) | REST | Phase 5. TVA and utility (Duke, Brookfield) schedules come in the same phase. |
@@ -482,7 +482,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 
 ### Open questions (resolve in Phase 1 spikes)
 - ~~How to discover AW reach IDs~~ (solved: one index request). Still open: the full list of AW gauge `source` types; whether our band split matches AW's status strings.
-- How far back the USGS OGC `continuous` collection goes, and the real rate limits with a key.
+- ~~USGS history depth and rate limits~~ (solved: 15-min data back to 1972 at the oldest pilot gauge; 1,000 requests/hour with a key).
 - When the NBM archive on AWS starts, and which QPF percentile fields and periods each model run provides.
 - Stage IV backfill route: NCAR EOL bulk download vs. AORC Zarr subsetting.
 

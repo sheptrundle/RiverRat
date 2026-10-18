@@ -18,6 +18,7 @@ class PoliteClient:
         self,
         user_agent: str,
         min_interval: float,
+        headers: dict[str, str] | None = None,
         max_retries: int = 4,
         timeout: float = 30.0,
         transport: httpx2.BaseTransport | None = None,
@@ -25,7 +26,7 @@ class PoliteClient:
         clock=time.monotonic,
     ) -> None:
         self._client = httpx2.Client(
-            headers={"User-Agent": user_agent},
+            headers={"User-Agent": user_agent, **(headers or {})},
             timeout=timeout,
             follow_redirects=True,
             transport=transport,

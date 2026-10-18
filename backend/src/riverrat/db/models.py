@@ -49,12 +49,28 @@ class Gauge(Base):
     location ID), "CALCULATED" (AW virtual gauge), ..."""
 
     __tablename__ = "gauge"
-    __table_args__ = (UniqueConstraint("source", "source_id"),)
+    __table_args__ = (
+        UniqueConstraint("source", "source_id"),
+        Index("ix_gauge_geom", "geom", postgresql_using="gist"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     source: Mapped[str] = mapped_column(String(16))
     source_id: Mapped[str] = mapped_column(String(32))
     name: Mapped[str]
+
+    # Site metadata from the gauge's agency (USGS for now).
+    geom = mapped_column(Geometry("POINT", srid=4326, spatial_index=False), nullable=True)
+    agency_name: Mapped[str | None]
+    drainage_area_sqmi: Mapped[float | None]
+    state_code: Mapped[str | None] = mapped_column(String(2))
+    huc: Mapped[str | None] = mapped_column(String(16))
+    # Period of record of the 15-minute discharge (cfs) and stage (ft) series.
+    cfs_begin: Mapped[datetime | None]
+    cfs_end: Mapped[datetime | None]
+    ft_begin: Mapped[datetime | None]
+    ft_end: Mapped[datetime | None]
+    metadata_synced_at: Mapped[datetime | None]
 
 
 class ReachGauge(Base):
@@ -75,3 +91,19 @@ class ReachGauge(Base):
 
     reach: Mapped[Reach] = relationship(back_populates="gauges")
     gauge: Mapped[Gauge] = relationship()
+
+
+class Observation(Base):
+    """Recent gauge readings (the server keeps ~60 days; full history lives in Parquet).
+    `param` is "cfs" or "ft"; `approved` is False while the agency's data is provisional."""
+
+    __tablename__ = "observation"
+
+    gauge_id: Mapped[int] = mapped_column(
+        ForeignKey("gauge.id", ondelete="CASCADE"), primary_key=True
+    )
+    param: Mapped[str] = mapped_column(String(8), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(primary_key=True)
+    value: Mapped[float]
+    approved: Mapped[bool]
+    qualifier: Mapped[str | None] = mapped_column(String(32))

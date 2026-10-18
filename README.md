@@ -31,7 +31,7 @@ The API container applies database migrations on startup.
 
 ### Backend on the host
 
-If the repo lives in an iCloud-synced folder (e.g. Desktop), iCloud marks `.venv` files hidden and Python 3.13 then ignores them. Keep the venv in an iCloud-excluded folder: `mkdir backend/.venv.nosync && ln -s .venv.nosync backend/.venv` before `uv sync`.
+If the repo lives in an iCloud-synced folder (e.g. Desktop), iCloud marks `.venv` files hidden and Python 3.13 then ignores them. Keep the venv and the data folder in iCloud-excluded folders: `mkdir backend/.venv.nosync data.nosync && ln -s .venv.nosync backend/.venv && ln -s data.nosync data` before `uv sync`.
 
 ```sh
 docker compose up -d db
@@ -45,6 +45,11 @@ uv run ruff check . && uv run ruff format --check .
 # Sync the American Whitewater reach catalog (facts only, 1 request / 5 s)
 uv run python -m riverrat.jobs.sync_reaches --index-only   # ~1,500 pilot reaches, 1 request
 uv run python -m riverrat.jobs.sync_reaches                # + reach details, ~2 h first run
+
+# USGS gauges (needs USGS_API_KEY in .env; 1,000 requests/hour)
+uv run python -m riverrat.jobs.usgs sites      # locations + periods of record
+uv run python -m riverrat.jobs.usgs live       # last 3 h of 15-min readings -> Postgres
+uv run python -m riverrat.jobs.usgs backfill   # 15-min history since 2002 -> data/usgs/iv/
 ```
 
 ### Web on the host
