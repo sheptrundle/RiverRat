@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     outlook_max_days: int = 6
     pilot_states: tuple[str, ...] = PILOT_STATES
 
+    # Scraping etiquette (DESIGN.md §10): identify ourselves and go slowly.
+    scraper_contact: str = "https://github.com/sheptrundle/RiverRat"
+    aw_request_interval_s: float = 5.0
+    aw_refresh_days: int = 7
+
 
 @lru_cache
 def get_settings() -> Settings:

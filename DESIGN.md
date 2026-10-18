@@ -91,7 +91,9 @@ Everything below was checked as live on 2026-10-18 unless marked *(verify in spi
 - Gauge `source` values seen so far:
   - `USGS` (Lower Gauley → USGS 03192000).
   - `CALCULATED`: AW's own virtual gauges, which must be mapped to real sources by hand.
-  - Other types such as TVA, USACE, and utilities are likely *(verify in spike)*.
+  - `NOAA`: an NWS location ID (e.g., `eecg1`).
+  - In a 15-reach pilot sample: 14 USGS, 1 NOAA. Other types (TVA, USACE, utilities) may exist; the sync stores whatever `source` AW reports.
+- Ranges are always a single min/max (`beginLowRunnable`/`endHighRunnable`) in `cfs` or `levelFT`. AW uses `0` and `100000` to mean "no bound"; we store those as null. Some reaches have no gauge, or a gauge with no range.
 
 ### 4.2 Gauges: observations and NOAA flow forecasts
 | Source | What we use it for | Access | Notes |
@@ -310,7 +312,7 @@ Laptop: backfill_history → Parquet + DuckDB → train / hindcast → model art
 | `reach` | `id`, `aw_id` (unique), `river`, `section`, `altname`, `difficulty`, `length_mi`, `gradient_fpm`, `geom` (LineString), `states[]`, `aw_updated_at`, `scraped_at`, `source` (`aw`/`manual`) |
 | `gauge` | `id`, `source` (`USGS`/`NWS`/`USACE`/`TVA`/`AW_CALC`/`VIRTUAL`), `source_id`, `name`, `geom` (Point), `drainage_area_sqmi`, `params`, `nws_lid`, `nwm_feature_id` (COMID), `regime`, `regulation_notes`, `active` |
 | `virtual_gauge_term` | `gauge_id`, `component_gauge_id`, `coef`, `lag_h`. A virtual gauge = Σ coef · component(t − lag). |
-| `reach_gauge` | `reach_id`, `gauge_id`, `is_primary`, `metric` (cfs/ft), `bands` (jsonb: ordered breakpoints for too_low / low / medium / high / too_high, each with a `source` of `aw`, `derived`, or `user`) |
+| `reach_gauge` | `reach_id`, `gauge_id`, `is_primary`, `metric` (cfs/ft), `range_min`, `range_max` (AW's bounds; null = open-ended), `aw_status`. Low/Med/High bands are derived from the range at read time; personal overrides get their own table later. |
 | `basin`, `basin_band` | `gauge_id`, (`band_no`), `geom`, `area_km2`, `area_check_ratio`, `mean_flow_dist_km` |
 | `grid_weight` | `grid_id`, `gauge_id`, `band_no`, `cell_idx`, `weight` |
 | `observation` | `gauge_id`, `param`, `ts`, `value`, `qualifier`. Partitioned by month; about 60 days kept on the server. |
@@ -355,7 +357,7 @@ The OpenAPI schema generates TypeScript types (`openapi-typescript`), so the fro
 - **Facts only.** We keep river and section name, class, length, gradient, put-in/take-out geometry, gauge links (source, ID, primary flag), flow ranges, and next release date. Descriptions, photos, trip reports, and user-written alerts are never extracted or stored.
 - Validate the result with Pydantic models.
 
-**Discovery of reach IDs** *(Phase 1 spike)*: use state index pages if they expose IDs; otherwise do a polite crawl over the ID range and record which IDs exist.
+**Discovery of reach IDs** (solved in the Phase 1 spike): the river index page (`/content/River/view/river-index`) embeds every reach stub in a `reachStubs` list: about 6,200 reaches nationwide, 1,497 in the pilot states. One request lists the whole catalog.
 
 **Politeness**
 - One connection at a time, with at least 5 seconds between requests.
@@ -479,7 +481,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)
-- How to discover AW reach IDs; the full list of AW gauge `source` types; whether our band split matches AW's status strings.
+- ~~How to discover AW reach IDs~~ (solved: one index request). Still open: the full list of AW gauge `source` types; whether our band split matches AW's status strings.
 - How far back the USGS OGC `continuous` collection goes, and the real rate limits with a key.
 - When the NBM archive on AWS starts, and which QPF percentile fields and periods each model run provides.
 - Stage IV backfill route: NCAR EOL bulk download vs. AORC Zarr subsetting.

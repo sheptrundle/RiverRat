@@ -1,0 +1,81 @@
+"""A throttled, retrying HTTP client shared by every external data source."""
+
+import logging
+import time
+
+import httpx2
+
+log = logging.getLogger(__name__)
+
+RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+
+
+class PoliteClient:
+    """GET-only client that waits `min_interval` seconds between requests and retries
+    transient failures with exponential backoff (honoring Retry-After)."""
+
+    def __init__(
+        self,
+        user_agent: str,
+        min_interval: float,
+        max_retries: int = 4,
+        timeout: float = 30.0,
+        transport: httpx2.BaseTransport | None = None,
+        sleep=time.sleep,
+        clock=time.monotonic,
+    ) -> None:
+        self._client = httpx2.Client(
+            headers={"User-Agent": user_agent},
+            timeout=timeout,
+            follow_redirects=True,
+            transport=transport,
+        )
+        self._min_interval = min_interval
+        self._max_retries = max_retries
+        self._sleep = sleep
+        self._clock = clock
+        self._last_request: float | None = None
+
+    def get(self, url: str) -> httpx2.Response:
+        for attempt in range(self._max_retries + 1):
+            self._wait_turn()
+            try:
+                response = self._client.get(url)
+            except httpx2.TransportError as exc:
+                if attempt == self._max_retries:
+                    raise
+                delay = self._backoff(attempt)
+                log.warning("GET %s failed (%s); retrying in %.0fs", url, exc, delay)
+            else:
+                if response.status_code not in RETRYABLE_STATUS or attempt == self._max_retries:
+                    response.raise_for_status()
+                    return response
+                delay = _retry_after(response) or self._backoff(attempt)
+                log.warning("GET %s -> %s; retrying in %.0fs", url, response.status_code, delay)
+            self._sleep(delay)
+        raise AssertionError("unreachable")
+
+    def close(self) -> None:
+        self._client.close()
+
+    def __enter__(self) -> "PoliteClient":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
+    def _wait_turn(self) -> None:
+        now = self._clock()
+        if self._last_request is not None:
+            remaining = self._min_interval - (now - self._last_request)
+            if remaining > 0:
+                self._sleep(remaining)
+        self._last_request = self._clock()
+
+    def _backoff(self, attempt: int) -> float:
+        return max(self._min_interval, 2.0) * 2**attempt
+
+
+def _retry_after(response: httpx2.Response) -> float | None:
+    value = response.headers.get("Retry-After", "")
+    return float(value) if value.isdigit() else None

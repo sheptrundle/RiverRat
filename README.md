@@ -31,6 +31,8 @@ The API container applies database migrations on startup.
 
 ### Backend on the host
 
+If the repo lives in an iCloud-synced folder (e.g. Desktop), iCloud marks `.venv` files hidden and Python 3.13 then ignores them. Keep the venv in an iCloud-excluded folder: `mkdir backend/.venv.nosync && ln -s .venv.nosync backend/.venv` before `uv sync`.
+
 ```sh
 docker compose up -d db
 cd backend
@@ -39,6 +41,10 @@ uv run alembic upgrade head
 uv run uvicorn riverrat.api.main:app --reload
 uv run pytest
 uv run ruff check . && uv run ruff format --check .
+
+# Sync the American Whitewater reach catalog (facts only, 1 request / 5 s)
+uv run python -m riverrat.jobs.sync_reaches --index-only   # ~1,500 pilot reaches, 1 request
+uv run python -m riverrat.jobs.sync_reaches                # + reach details, ~2 h first run
 ```
 
 ### Web on the host

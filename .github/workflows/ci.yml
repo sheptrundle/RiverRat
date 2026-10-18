@@ -8,6 +8,20 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    services:
+      db:
+        image: imresamu/postgis:18-3.6-alpine
+        env:
+          POSTGRES_USER: riverrat
+          POSTGRES_PASSWORD: riverrat
+          POSTGRES_DB: riverrat
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U riverrat"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 20
     defaults:
       run:
         working-directory: backend
@@ -18,6 +32,8 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest
+      - name: Migrations match models
+        run: uv run alembic upgrade head && uv run alembic check
 
   web:
     runs-on: ubuntu-latest

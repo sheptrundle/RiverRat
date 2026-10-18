@@ -4,22 +4,29 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from riverrat.config import get_settings
+from riverrat.db.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# Callers (e.g. tests) may set the URL explicitly; otherwise use the app settings.
+if not config.get_main_option("sqlalchemy.url"):
+    config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
+target_metadata = Base.metadata
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    """Compare only tables our models define. The PostGIS image also installs the
+    topology and tiger geocoder extensions, whose tables are on the search path."""
+    table = obj if type_ == "table" else getattr(obj, "table", None)
+    return table is None or table.name in target_metadata.tables
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
@@ -43,6 +50,7 @@ def run_migrations_offline() -> None:
     context.configure(
         url=url,
         target_metadata=target_metadata,
+        include_object=include_object,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
@@ -65,7 +73,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_object=include_object,
+        )
 
         with context.begin_transaction():
             context.run_migrations()

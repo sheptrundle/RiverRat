@@ -12,7 +12,7 @@
 # Python
 __pycache__/
 *.py[cod]
-.venv/
+.venv
 .pytest_cache/
 .ruff_cache/
 *.egg-info/
@@ -26,3 +26,6 @@ web/dist/
 
 # Data lake, raw caches, model artifacts. Never commit scraped or downloaded data.
 /data/
+
+# iCloud-excluded folders (see README)
+*.nosync
