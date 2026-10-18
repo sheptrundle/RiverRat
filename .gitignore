@@ -1,0 +1,28 @@
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Environment (copy .env.example to .env)
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+web/dist/
+*.tsbuildinfo
+
+# Data lake, raw caches, model artifacts. Never commit scraped or downloaded data.
+/data/
