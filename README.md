@@ -54,7 +54,20 @@ uv run python -m riverrat.jobs.usgs backfill   # 15-min history since 2002 -> da
 # NOAA forecasts (NWPS keeps no history, so archive every few hours)
 uv run python -m riverrat.jobs.noaa link       # gauges -> NWS location IDs + NWM reaches
 uv run python -m riverrat.jobs.noaa archive    # store new RFC + NWM short-range forecasts
+
+# Watersheds (after usgs sites)
+uv run python -m riverrat.jobs.basins          # NLDI basin polygon per USGS gauge
 ```
+
+### Scheduled jobs
+
+The `worker` container (`docker compose up -d worker`) runs recurring jobs from `riverrat/jobs/scheduler.py`. Each job runs at startup and then on its interval; `docker compose logs -f worker` shows them. They only run while Docker is up, so on a laptop expect gaps while it sleeps.
+
+| Job | Every | Steps |
+|---|---|---|
+| `noaa-archive` | 3 h | `noaa link`, `noaa archive` |
+
+After changing backend code, rebuild with `docker compose up -d --build worker`.
 
 ### Web on the host
 

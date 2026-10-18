@@ -27,6 +27,25 @@ services:
       db:
         condition: service_healthy
 
+  worker:
+    # Recurring jobs (riverrat.jobs.scheduler), e.g. archiving NOAA forecasts every 3 h.
+    build: ./backend
+    command: ["python", "-m", "riverrat.jobs.scheduler"]
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-riverrat}:${POSTGRES_PASSWORD:-riverrat}@db:5432/${POSTGRES_DB:-riverrat}
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started  # the api container applies migrations
+
   web:
     image: node:24-alpine
     working_dir: /app

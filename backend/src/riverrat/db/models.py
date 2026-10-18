@@ -129,3 +129,21 @@ class NoaaForecast(Base):
     valid_time: Mapped[datetime] = mapped_column(primary_key=True)
     flow_cfs: Mapped[float | None]
     stage_ft: Mapped[float | None]
+
+
+class Basin(Base):
+    """The watershed upstream of a gauge (DESIGN.md §5). `area_ratio` compares our
+    polygon's area with the agency's published drainage area; values far from 1 point to a
+    bad delineation or a mismatched gauge."""
+
+    __tablename__ = "basin"
+    __table_args__ = (Index("ix_basin_geom", "geom", postgresql_using="gist"),)
+
+    gauge_id: Mapped[int] = mapped_column(
+        ForeignKey("gauge.id", ondelete="CASCADE"), primary_key=True
+    )
+    geom = mapped_column(Geometry("MULTIPOLYGON", srid=4326, spatial_index=False), nullable=False)
+    area_sqmi: Mapped[float]
+    area_ratio: Mapped[float | None]
+    source: Mapped[str] = mapped_column(String(16))
+    fetched_at: Mapped[datetime]
