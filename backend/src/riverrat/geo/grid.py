@@ -1,9 +1,10 @@
 """Area weights of grid cells inside a watershed (DESIGN.md §5.1 step 2).
 
 Basin rain for an hour is then `Σ wᵢ·Pᵢ / Σ wᵢ` over the basin's cells. Each weight is
-the fraction of the cell inside the basin times the cell's relative area (cos latitude),
-so a cell half inside the basin counts half, and small basins aren't rounded to whole
-cells.
+the fraction of the cell inside the basin, so a cell half inside the basin counts half
+and small basins aren't rounded to whole cells. On a lat/lon grid it is also scaled by
+the cell's relative area (cos latitude); a projected grid (x/y in meters, with the
+basin projected the same way) has equal-area cells.
 """
 
 from dataclasses import dataclass
@@ -32,7 +33,11 @@ def cell_edges(centers: np.ndarray) -> np.ndarray:
     return np.concatenate([[2 * centers[0] - mid[0]], mid, [2 * centers[-1] - mid[-1]]])
 
 
-def cell_weights(geom: BaseGeometry, lat: np.ndarray, lon: np.ndarray) -> CellWeights:
+def cell_weights(
+    geom: BaseGeometry, lat: np.ndarray, lon: np.ndarray, *, geographic: bool = True
+) -> CellWeights:
+    """`lat`/`lon` are ascending cell centers: degrees, or projected y/x when
+    `geographic` is False."""
     lat_edges, lon_edges = cell_edges(lat), cell_edges(lon)
     min_x, min_y, max_x, max_y = geom.bounds
     i0, i1 = _index_range(lat_edges, min_y, max_y)
@@ -48,7 +53,7 @@ def cell_weights(geom: BaseGeometry, lat: np.ndarray, lon: np.ndarray) -> CellWe
     overlap = shapely.area(shapely.intersection(boxes[edge], geom))
     fraction[edge] = overlap / shapely.area(boxes[edge])
 
-    weights = fraction * np.cos(np.radians(lat[rows]))
+    weights = fraction * np.cos(np.radians(lat[rows])) if geographic else fraction
     keep = fraction > SLIVER
     return CellWeights(rows[keep], cols[keep], weights[keep])
 

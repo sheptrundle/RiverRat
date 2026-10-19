@@ -107,8 +107,10 @@ Everything below was checked as live on 2026-10-18 unless marked *(verify in spi
 | Product | Resolution | Period | Role |
 |---|---|---|---|
 | **AORC v1.1** (AWS Open Data, `noaa-nws-aorc-v1-1-1km`, one Zarr store per year) | 1/120° (~1 km), hourly, mm stamped at the hour's end | 1979 → 2025 (checked 2026-10-19; years are added in batches) | **Training history, 2002 onward.** Since 2002 its precipitation is derived from Stage IV, regridded to 1 km. Chunks of 144 h × 128 × 256 cells are read directly over HTTPS, and only those touching a basin: ~0.5–1 GB per year for the pilot, ~4 min per year. Temperature (`TMP_2maboveground`) is in the same stores. |
-| **Stage IV** (NCEP radar + gauge mosaic, quality-checked by the RFCs) | 4 km, hourly | 2002 → real time (NOMADS, about 1–2 h latency; archive at Iowa State IEM and NCAR EOL) | **Candidate live product** and the filler for the gap between AORC's last year and today. Its bias against AORC is measured over overlapping years before mixing them. |
-| MRMS multi-sensor QPE (AWS `noaa-mrms-pds`) | 1 km, hourly (updated every 2 min) | ~2020 → real time | Alternative live product: same grid resolution as AORC. Also fills the last 1–2 hours. |
+| **Stage IV** (NCEP radar + gauge mosaic, quality-checked by the RFCs) | 4.76 km HRAP polar stereographic grid, hourly, stamped at the hour's end like AORC | 2002 → real time. NOMADS (`pcpanl`) keeps ~10 days at 1–2 h latency and revises files as RFC quality control arrives; Iowa State IEM archives every hour. | **Live and recent rain**, from the hour ending 2026-01-01 00Z (where AORC stops) into Postgres `basin_rain`, hourly. Hours from the last 2 days are refetched when their file's Last-Modified changes. |
+| MRMS multi-sensor QPE (AWS `noaa-mrms-pds`) | 1 km, hourly (updated every 2 min) | Oct 2020 → real time | Not used for now: against AORC it is noisier than Stage IV (see below). A later option for the newest 1–2 hours. |
+
+**Live product check (2025, 182 days × 337 basins, daily 12Z–12Z totals vs AORC):** Stage IV bias +0.5%, per-basin annual ratio 0.99–1.02 (p10–p90), wet-day error 0.48 mm, r = 0.994. MRMS bias −1.3%, ratio 0.93–1.04, wet-day error 2.23 mm, r = 0.963. Hourly Stage IV lines up with AORC at zero lag (r = 0.997; ±1 h gives ~0.55), confirming both stamp the hour's end.
 
 ### 4.4 Precipitation: forecast
 | Product | Role |
@@ -479,6 +481,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-18 | Desktop-first UI |
 | 2026-10-18 | The GitHub repo is public. Scraped data and raw AW pages are never committed. |
 | 2026-10-19 | Rain history comes from AORC v1.1 (1 km, Stage IV-derived since 2002) rather than raw Stage IV files: one public cloud store per year instead of ~210,000 hourly files from a university server. Only basin means are stored (`data/rain/aorc/{year}.parquet`). |
+| 2026-10-19 | Live and recent rain come from Stage IV (NOMADS for the last ~6 days, Iowa State IEM before that), continuing AORC from 2026-01-01. Basin weights use exact cell fractions on Stage IV's own projected grid. |
 | 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)
@@ -486,7 +489,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 - ~~USGS history depth and rate limits~~ (solved: 15-min data back to 1972 at the oldest pilot gauge; 1,000 requests/hour with a key).
 - When the NBM archive on AWS starts, and which QPF percentile fields and periods each model run provides.
 - ~~Stage IV backfill route~~ (solved: AORC Zarr on AWS, read chunk by chunk; basin means only, raw grids never kept).
-- Live and recent rain (2026 → now): Stage IV (4 km, same lineage as AORC) or MRMS (1 km, same resolution). Decide by comparing each against AORC for 2024–2025.
+- ~~Live and recent rain~~ (solved: Stage IV, which matches AORC far more closely than MRMS).
 - NWM medium range for days 2–6: read `medium_range_blend` from AWS directly (~600 MB/day for 3-hourly steps out to 6 days; less if HDF5 range reads can fetch only our reaches), or wait for NWPS to serve it again.
 
 ## 16. Glossary

@@ -147,3 +147,30 @@ class Basin(Base):
     area_ratio: Mapped[float | None]
     source: Mapped[str] = mapped_column(String(16))
     fetched_at: Mapped[datetime]
+
+
+class BasinRain(Base):
+    """Hourly basin-average rain since the end of the AORC history (DESIGN.md §5), from
+    the live product. `ts` is the end of the hour; `mm` is None when too little of the
+    basin had data. History before that lives in Parquet (data/rain/aorc/)."""
+
+    __tablename__ = "basin_rain"
+
+    gauge_id: Mapped[int] = mapped_column(
+        ForeignKey("gauge.id", ondelete="CASCADE"), primary_key=True
+    )
+    source: Mapped[str] = mapped_column(String(16), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(primary_key=True)
+    mm: Mapped[float | None]
+
+
+class RainHour(Base):
+    """An hour of the live rain product that has been processed for every basin.
+    `file_modified` is the file's Last-Modified time, so revised files are refetched."""
+
+    __tablename__ = "rain_hour"
+
+    source: Mapped[str] = mapped_column(String(16), primary_key=True)
+    ts: Mapped[datetime] = mapped_column(primary_key=True)
+    file_modified: Mapped[datetime | None]
+    fetched_at: Mapped[datetime]

@@ -11,7 +11,7 @@ RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 
 
 class PoliteClient:
-    """GET-only client that waits `min_interval` seconds between requests and retries
+    """Read-only (GET/HEAD) client that waits `min_interval` seconds between requests and retries
     transient failures with exponential backoff (honoring Retry-After)."""
 
     def __init__(
@@ -38,21 +38,29 @@ class PoliteClient:
         self._last_request: float | None = None
 
     def get(self, url: str) -> httpx2.Response:
+        return self._request("GET", url)
+
+    def head(self, url: str) -> httpx2.Response:
+        return self._request("HEAD", url)
+
+    def _request(self, method: str, url: str) -> httpx2.Response:
         for attempt in range(self._max_retries + 1):
             self._wait_turn()
             try:
-                response = self._client.get(url)
+                response = self._client.request(method, url)
             except httpx2.TransportError as exc:
                 if attempt == self._max_retries:
                     raise
                 delay = self._backoff(attempt)
-                log.warning("GET %s failed (%s); retrying in %.0fs", url, exc, delay)
+                log.warning("%s %s failed (%s); retrying in %.0fs", method, url, exc, delay)
             else:
                 if response.status_code not in RETRYABLE_STATUS or attempt == self._max_retries:
                     response.raise_for_status()
                     return response
                 delay = _retry_after(response) or self._backoff(attempt)
-                log.warning("GET %s -> %s; retrying in %.0fs", url, response.status_code, delay)
+                log.warning(
+                    "%s %s -> %s; retrying in %.0fs", method, url, response.status_code, delay
+                )
             self._sleep(delay)
         raise AssertionError("unreachable")
 

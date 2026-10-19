@@ -3,6 +3,7 @@
     uv run python -m riverrat.jobs.rain backfill                # every AORC year since 2002
     uv run python -m riverrat.jobs.rain backfill --year 2018    # just these years
     uv run python -m riverrat.jobs.rain backfill --refresh      # recompute every basin
+    uv run python -m riverrat.jobs.rain recent                  # Stage IV since AORC ends
 
 History comes from AORC (DESIGN.md §4.3). Each year becomes one Parquet file,
 data/rain/aorc/{year}.parquet, with columns (site, ts, mm): the USGS site number, the
@@ -10,6 +11,11 @@ end of the hour (UTC), and the area-weighted basin mean in mm. Only the grid chu
 touch a basin are downloaded, and only for basins missing from the year's file, so
 reruns are cheap and new basins are added without redoing the rest. Raw grids are never
 kept on disk.
+
+AORC's history ends with the last whole year it publishes; `recent` continues from there
+with Stage IV (the product AORC is built from) into Postgres (`basin_rain`), one hour
+per file. It runs hourly in the worker: each run processes hours it hasn't seen, newest
+first, and refetches hours from the last two days whose file has been revised.
 """
 
 import argparse
@@ -17,8 +23,11 @@ import logging
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 
+import httpx2
 import numpy as np
 import pyarrow as pa
 import pyarrow.compute as pc
@@ -26,14 +35,15 @@ import pyarrow.parquet as pq
 import shapely
 from shapely.geometry.base import BaseGeometry
 from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from riverrat.config import get_settings
-from riverrat.db.models import Basin, Gauge
+from riverrat.db.models import Basin, BasinRain, Gauge, RainHour
 from riverrat.db.session import get_engine
-from riverrat.geo.grid import cell_weights
+from riverrat.geo.grid import CellWeights, cell_weights
 from riverrat.http import PoliteClient
-from riverrat.sources import aorc
+from riverrat.sources import aorc, stage4
 
 log = logging.getLogger(__name__)
 
@@ -61,14 +71,18 @@ class RainStats:
 
 
 def load_basins(session: Session) -> dict[str, BaseGeometry]:
+    return {site: geom for _, site, geom in _basin_rows(session)}
+
+
+def _basin_rows(session: Session) -> list[tuple[int, str, BaseGeometry]]:
     rows = session.execute(
-        select(Gauge.source_id, func.ST_AsGeoJSON(Basin.geom))
+        select(Gauge.id, Gauge.source_id, func.ST_AsGeoJSON(Basin.geom))
         .join(Basin, Basin.gauge_id == Gauge.id)
         .where(Gauge.source == "USGS")
         .order_by(Gauge.source_id)
     ).all()
     session.rollback()  # no transaction open during the downloads
-    return {site: shapely.from_geojson(geojson) for site, geojson in rows}
+    return [(gauge_id, site, shapely.from_geojson(geojson)) for gauge_id, site, geojson in rows]
 
 
 def backfill(
@@ -165,6 +179,146 @@ def basin_rain(
     return table, len(tasks)
 
 
+# --- recent: Stage IV into Postgres ---------------------------------------------------
+
+STAGE4 = "stage4"
+# Hours this recent are checked for revised files (RFC quality control arrives late).
+REVISION_WINDOW = timedelta(hours=48)
+
+
+@dataclass
+class RecentStats:
+    hours: int = 0
+    revised: int = 0
+    unavailable: int = 0
+    failed: int = 0
+    remaining: int = 0
+
+
+def update_recent(
+    client: PoliteClient,
+    session: Session,
+    *,
+    start: datetime,
+    now: datetime | None = None,
+    max_hours: int | None = None,
+    refresh: bool = False,
+) -> RecentStats:
+    """Basin rain for every hour ending after `start`, newest first."""
+    stats = RecentStats()
+    now = now or datetime.now(UTC)
+    basins = _basin_rows(session)
+    seen = dict(
+        session.execute(
+            select(RainHour.ts, RainHour.file_modified).where(
+                RainHour.source == STAGE4, RainHour.ts >= start
+            )
+        ).all()
+    )
+    session.rollback()  # no transaction open during the downloads
+
+    latest = now.replace(minute=0, second=0, microsecond=0)
+    hours = [
+        latest - timedelta(hours=n) for n in range(int((latest - start) / timedelta(hours=1)) + 1)
+    ]
+    todo = [h for h in hours if refresh or h not in seen]
+    for hour in hours:
+        if refresh or hour not in seen or latest - hour >= REVISION_WINDOW:
+            continue
+        modified = _last_modified(client, stage4.url_for(hour, now))
+        if modified and (seen[hour] is None or modified > seen[hour]):
+            todo.append(hour)
+            stats.revised += 1
+    todo.sort(reverse=True)
+    if max_hours is not None:
+        stats.remaining = max(len(todo) - max_hours, 0)
+        todo = todo[:max_hours]
+
+    weights: tuple[stage4.Grid, list[CellWeights]] | None = None
+    for hour in todo:
+        try:
+            response = client.get(stage4.url_for(hour, now))
+            field = stage4.decode(response.content)
+        except httpx2.HTTPStatusError as exc:
+            if exc.response.status_code == 404:  # not published yet, or a gap in the archive
+                stats.unavailable += 1
+            else:
+                stats.failed += 1
+                log.warning("Stage IV %s failed: %s", hour.isoformat(), exc)
+            continue
+        except (httpx2.HTTPError, stage4.Stage4FormatError) as exc:
+            stats.failed += 1
+            log.warning("Stage IV %s failed: %s", hour.isoformat(), exc)
+            continue
+        if field.hour_end != hour:
+            stats.failed += 1
+            log.warning("Stage IV %s: file is for %s", hour.isoformat(), field.hour_end)
+            continue
+        if weights is None or not weights[0].same_as(field.grid):
+            weights = (field.grid, _grid_weights(field.grid, [geom for _, _, geom in basins]))
+        _store_hour(session, hour, field, basins, weights[1], _modified_header(response))
+        stats.hours += 1
+        if stats.hours % 100 == 0:
+            log.info("Stage IV: %d of %d hours done (back to %s)", stats.hours, len(todo), hour)
+    return stats
+
+
+def _grid_weights(grid: stage4.Grid, geoms: list[BaseGeometry]) -> list[CellWeights]:
+    return [cell_weights(grid.project(g), grid.y, grid.x, geographic=False) for g in geoms]
+
+
+def _store_hour(session, hour, field, basins, weights, file_modified) -> None:
+    rows = []
+    for (gauge_id, _, _), cells in zip(basins, weights, strict=True):
+        mm = None
+        if len(cells.weights):
+            values = field.mm[cells.rows, cells.cols]
+            valid = ~np.isnan(values)
+            covered = cells.weights[valid].sum()
+            if covered >= MIN_COVERAGE * cells.weights.sum():
+                mm = float(values[valid] @ cells.weights[valid] / covered)
+        rows.append({"gauge_id": gauge_id, "source": STAGE4, "ts": hour, "mm": mm})
+    if rows:
+        stmt = insert(BasinRain).values(rows)
+        session.execute(
+            stmt.on_conflict_do_update(
+                index_elements=["gauge_id", "source", "ts"], set_={"mm": stmt.excluded.mm}
+            )
+        )
+    marker = {
+        "source": STAGE4,
+        "ts": hour,
+        "file_modified": file_modified,
+        "fetched_at": datetime.now(UTC),
+    }
+    stmt = insert(RainHour).values(marker)
+    session.execute(
+        stmt.on_conflict_do_update(
+            index_elements=["source", "ts"],
+            set_={
+                "file_modified": stmt.excluded.file_modified,
+                "fetched_at": stmt.excluded.fetched_at,
+            },
+        )
+    )
+    session.commit()
+
+
+def _last_modified(client: PoliteClient, url: str) -> datetime | None:
+    try:
+        return _modified_header(client.head(url))
+    except httpx2.HTTPError:
+        return None
+
+
+def _modified_header(response: httpx2.Response) -> datetime | None:
+    value = response.headers.get("Last-Modified")
+    try:
+        return parsedate_to_datetime(value) if value else None
+    except ValueError:
+        return None
+
+
 def _read(path: Path) -> pa.Table:
     # Parquet has no second-precision timestamps; it stores ours as milliseconds.
     return pq.read_table(path).cast(RAIN_SCHEMA)
@@ -184,14 +338,32 @@ def main() -> int:
     back.add_argument("--year", type=int, action="append", help="Only these years")
     back.add_argument("--refresh", action="store_true", help="Recompute every basin")
     back.add_argument("--workers", type=int, default=8, help="Parallel chunk downloads")
+    recent = sub.add_parser("recent", help="Hourly Stage IV basin rain since AORC ends")
+    recent.add_argument("--max-hours", type=int, help="Process at most this many hours")
+    recent.add_argument("--refresh", action="store_true", help="Recompute every hour")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     logging.getLogger("httpx2").setLevel(logging.WARNING)
     settings = get_settings()
+    user_agent = f"RiverRat/0.1 (+{settings.scraper_contact})"
+    if args.command == "recent":
+        with (
+            PoliteClient(user_agent, settings.stage4_request_interval_s, timeout=120) as client,
+            Session(get_engine()) as session,
+        ):
+            stats = update_recent(
+                client,
+                session,
+                start=settings.live_rain_start,
+                max_hours=args.max_hours,
+                refresh=args.refresh,
+            )
+            log.info("Recent rain: %s", stats)
+        return 0
     # AWS Open Data serves anonymous parallel reads; no throttle needed.
     with (
-        PoliteClient(f"RiverRat/0.1 (+{settings.scraper_contact})", 0, timeout=120) as client,
+        PoliteClient(user_agent, 0, timeout=120) as client,
         Session(get_engine()) as session,
     ):
         stats = backfill(

@@ -1,5 +1,6 @@
 """Runtime configuration, read from environment variables or the repo-root .env file."""
 
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -32,6 +33,10 @@ class Settings(BaseSettings):
     history_start_year: int = 2002
     observation_retention_days: int = 60
     nwps_request_interval_s: float = 1.0
+    # Rain: AORC history ends with its last published year; Stage IV takes over from the
+    # hour ending at this time (DESIGN.md §4.3). Move it forward when AORC adds a year.
+    live_rain_start: datetime = datetime(2026, 1, 1, tzinfo=UTC)
+    stage4_request_interval_s: float = 1.0
     data_dir: Path = _REPO_ROOT / "data"
 
 

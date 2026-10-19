@@ -33,6 +33,8 @@ The API container applies database migrations on startup.
 
 If the repo lives in an iCloud-synced folder (e.g. Desktop), iCloud marks `.venv` files hidden and Python 3.13 then ignores them. Keep the venv and the data folder in iCloud-excluded folders: `mkdir backend/.venv.nosync data.nosync && ln -s .venv.nosync backend/.venv && ln -s data.nosync data` before `uv sync`.
 
+GRIB decoding uses ecCodes. On macOS `uv sync` installs it bundled with the Python package; on Linux install the system library first (`apt-get install libeccodes0`), as the Dockerfile and CI do.
+
 ```sh
 docker compose up -d db
 cd backend
@@ -60,6 +62,7 @@ uv run python -m riverrat.jobs.basins          # NLDI basin polygon per USGS gau
 
 # Rain history (after basins): hourly basin means from AORC, ~4 min per year
 uv run python -m riverrat.jobs.rain backfill   # 2002 onward -> data/rain/aorc/{year}.parquet
+uv run python -m riverrat.jobs.rain recent     # Stage IV since AORC ends -> Postgres basin_rain
 ```
 
 Long backfills can run in a container so they survive closing the terminal:
@@ -76,6 +79,7 @@ The `worker` container (`docker compose up -d worker`) runs recurring jobs from 
 | Job | Every | Steps |
 |---|---|---|
 | `noaa-archive` | 3 h | `noaa link`, `noaa archive` |
+| `rain-recent` | 1 h | `rain recent --max-hours 48` (new Stage IV hours, plus revisions from the last 2 days) |
 
 After changing backend code, rebuild with `docker compose up -d --build worker`.
 
