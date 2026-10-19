@@ -57,6 +57,16 @@ uv run python -m riverrat.jobs.noaa archive    # store new RFC + NWM short-range
 
 # Watersheds (after usgs sites)
 uv run python -m riverrat.jobs.basins          # NLDI basin polygon per USGS gauge
+
+# Rain history (after basins): hourly basin means from AORC, ~4 min per year
+uv run python -m riverrat.jobs.rain backfill   # 2002 onward -> data/rain/aorc/{year}.parquet
+```
+
+Long backfills can run in a container so they survive closing the terminal:
+
+```sh
+docker compose run -d --name riverrat-rain worker python -m riverrat.jobs.rain backfill
+docker logs -f riverrat-rain
 ```
 
 ### Scheduled jobs

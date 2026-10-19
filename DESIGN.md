@@ -106,9 +106,9 @@ Everything below was checked as live on 2026-10-18 unless marked *(verify in spi
 ### 4.3 Precipitation: observed
 | Product | Resolution | Period | Role |
 |---|---|---|---|
-| **Stage IV** (NCEP radar + gauge mosaic, quality-checked by the RFCs) | 4 km, hourly | 2002 → real time (NOMADS, about 1–2 h latency; archive at NCAR EOL) | **The canonical product for both training and live runs**, so the model sees the same rain data in both |
-| MRMS multi-sensor QPE (AWS `noaa-mrms-pds`) | 1 km, hourly (updated every 2 min) | ~2020 → real time | Later upgrade for small basins, and to fill the last 1–2 hours |
-| AORC v1.1 (AWS Zarr) | ~1 km, hourly | 1979 → recent | Training fallback if the Stage IV backfill is painful. Since 2002 its precipitation is derived from Stage IV. |
+| **AORC v1.1** (AWS Open Data, `noaa-nws-aorc-v1-1-1km`, one Zarr store per year) | 1/120° (~1 km), hourly, mm stamped at the hour's end | 1979 → 2025 (checked 2026-10-19; years are added in batches) | **Training history, 2002 onward.** Since 2002 its precipitation is derived from Stage IV, regridded to 1 km. Chunks of 144 h × 128 × 256 cells are read directly over HTTPS, and only those touching a basin: ~0.5–1 GB per year for the pilot, ~4 min per year. Temperature (`TMP_2maboveground`) is in the same stores. |
+| **Stage IV** (NCEP radar + gauge mosaic, quality-checked by the RFCs) | 4 km, hourly | 2002 → real time (NOMADS, about 1–2 h latency; archive at Iowa State IEM and NCAR EOL) | **Candidate live product** and the filler for the gap between AORC's last year and today. Its bias against AORC is measured over overlapping years before mixing them. |
+| MRMS multi-sensor QPE (AWS `noaa-mrms-pds`) | 1 km, hourly (updated every 2 min) | ~2020 → real time | Alternative live product: same grid resolution as AORC. Also fills the last 1–2 hours. |
 
 ### 4.4 Precipitation: forecast
 | Product | Role |
@@ -138,7 +138,7 @@ A reach is predicted through its correlated gauge, and AW's flow bands are alrea
 
 ### 5.1 Pipeline
 1. **Delineate** the watershed upstream of each modeled gauge (NLDI `basin`). Check its area against the USGS published drainage area and flag mismatches over 10%. For non-USGS points (virtual gauges, put-ins), use NLDI by COMID (split catchment) or USGS StreamStats.
-2. **Compute weights.** Overlay the basin on each rain grid (Stage IV, NBM, …) and compute each grid cell's exact fractional coverage with `exactextract`. Store the weights once per (grid, basin). Basin rain for any hour is then a sparse dot product, `P_basin(t) = Σ wᵢ · Pᵢ(t)`, which handles thousands of basins in milliseconds.
+2. **Compute weights.** Overlay the basin on each rain grid (Stage IV, NBM, …) and compute each grid cell's exact fractional coverage (`riverrat.geo.grid`, with shapely), times the cell's relative area (cos latitude). Store the weights once per (grid, basin). Basin rain for any hour is then a sparse dot product, `P_basin(t) = Σ wᵢ · Pᵢ(t)`, which handles thousands of basins in milliseconds.
 3. **Split into travel-time bands.** Divide each basin into zones by flow distance to the gauge, using NHDPlus path length (for example near, middle, and far thirds). Rain near the gauge arrives first and headwater rain arrives later, and the model learns each band's timing. Basins under about 100 mi² use a single band.
 4. **For regulated rivers, use the intervening area only.** Rain above a dam fills the reservoir, not the river. The relevant area is basin(gauge) minus basin(dam), and the dam's outflow becomes an input. Example: the New River at Thurmond = Bluestone Dam outflow (routed downstream) + the Greenbrier (undammed) + local inflow.
 5. **Treat upstream gauges as rain already turned into flow.** For Regime B, NLDI upstream navigation finds tributary and mainstem gauges. Their lagged flows are the strongest predictors (e.g., James at Cartersville → James at Richmond).
@@ -237,7 +237,7 @@ For each gauge, the displayed forecast is the best model by hindcast CRPS, or a 
 ### 6.6 Training data
 - **One hourly aligned table per gauge:**
   - flow: the hourly mean of 15-minute data, or daily values for old years and big basins
-  - basin rain by band: Stage IV, 2002 onward
+  - basin rain by band: AORC (Stage IV-derived), 2002 onward
   - temperature
 - **Data quality:**
   - Drop readings flagged as ice-affected or equipment malfunction.
@@ -457,7 +457,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | Going public without AW's permission | A hard gate: ask first (§10). |
 | USGS legacy API shutdown (Q1 2027) | Build only on the OGC API; use an API key; backfill gradually within rate limits. |
 | Rain-forecast error dominates from day 3 on | Probabilistic UI, a "rain needed" figure, and calibration. Never overclaim. |
-| Rain data differs between training and live runs | Use the same product (Stage IV) for both, and monitor bias if MRMS is added. |
+| Rain data differs between training and live runs | Training uses AORC, which is built from Stage IV since 2002. Measure the live product's bias against AORC over overlapping years and correct it before serving. |
 | Regulated rivers look predictable but aren't | Regime classification, release calendars, and confidence flags. |
 | Winter ice and snow in the WV highlands | Drop ice-affected data; add temperature features; flag winter forecasts as lower confidence. |
 | A 4 km rain grid is coarse for tiny creeks | Exact area weighting now; MRMS (1 km) later. |
@@ -478,13 +478,15 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-18 | Runnable = in range at any point during daylight, with Low/Med/High bands plus personal overrides |
 | 2026-10-18 | Desktop-first UI |
 | 2026-10-18 | The GitHub repo is public. Scraped data and raw AW pages are never committed. |
+| 2026-10-19 | Rain history comes from AORC v1.1 (1 km, Stage IV-derived since 2002) rather than raw Stage IV files: one public cloud store per year instead of ~210,000 hourly files from a university server. Only basin means are stored (`data/rain/aorc/{year}.parquet`). |
 | 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)
 - ~~How to discover AW reach IDs~~ (solved: one index request). Still open: the full list of AW gauge `source` types; whether our band split matches AW's status strings.
 - ~~USGS history depth and rate limits~~ (solved: 15-min data back to 1972 at the oldest pilot gauge; 1,000 requests/hour with a key).
 - When the NBM archive on AWS starts, and which QPF percentile fields and periods each model run provides.
-- Stage IV backfill route: NCAR EOL bulk download vs. AORC Zarr subsetting.
+- ~~Stage IV backfill route~~ (solved: AORC Zarr on AWS, read chunk by chunk; basin means only, raw grids never kept).
+- Live and recent rain (2026 → now): Stage IV (4 km, same lineage as AORC) or MRMS (1 km, same resolution). Decide by comparing each against AORC for 2024–2025.
 - NWM medium range for days 2–6: read `medium_range_blend` from AWS directly (~600 MB/day for 3-hourly steps out to 6 days; less if HDF5 range reads can fetch only our reaches), or wait for NWPS to serve it again.
 
 ## 16. Glossary

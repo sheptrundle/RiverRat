@@ -8,9 +8,11 @@ dependencies = [
     "fastapi>=0.146.0",
     "geoalchemy2>=0.20.0",
     "httpx2>=2.14.0",
+    "numpy>=2.5.4",
     "psycopg[binary]>=3.3.6",
     "pyarrow>=26.0.0",
     "pydantic-settings>=2.16.0",
+    "shapely>=2.2.0",
     "sqlalchemy>=2.1.5",
     "uvicorn[standard]>=0.54.0",
 ]
