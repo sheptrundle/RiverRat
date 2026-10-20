@@ -8,11 +8,17 @@ import httpx2
 log = logging.getLogger(__name__)
 
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+# While the network is down (DNS fails, connections refused), keep trying this long,
+# checking at most this often, before giving up: long backfills shouldn't die when the
+# laptop's Wi-Fi drops or it sleeps for a while.
+OUTAGE_PATIENCE_S = 30 * 60
+OUTAGE_POLL_S = 60.0
 
 
 class PoliteClient:
     """Read-only (GET/HEAD) client that waits `min_interval` seconds between requests and retries
-    transient failures with exponential backoff (honoring Retry-After)."""
+    transient failures with exponential backoff (honoring Retry-After). Failures to connect
+    at all are retried for up to `outage_patience` seconds."""
 
     def __init__(
         self,
@@ -20,6 +26,7 @@ class PoliteClient:
         min_interval: float,
         headers: dict[str, str] | None = None,
         max_retries: int = 4,
+        outage_patience: float = OUTAGE_PATIENCE_S,
         timeout: float = 30.0,
         transport: httpx2.BaseTransport | None = None,
         sleep=time.sleep,
@@ -33,6 +40,7 @@ class PoliteClient:
         )
         self._min_interval = min_interval
         self._max_retries = max_retries
+        self._outage_patience = outage_patience
         self._sleep = sleep
         self._clock = clock
         self._last_request: float | None = None
@@ -44,25 +52,37 @@ class PoliteClient:
         return self._request("HEAD", url)
 
     def _request(self, method: str, url: str) -> httpx2.Response:
-        for attempt in range(self._max_retries + 1):
+        attempt = 0
+        outage_since: float | None = None
+        while True:
             self._wait_turn()
             try:
                 response = self._client.request(method, url)
+            except httpx2.ConnectError as exc:
+                # Nothing reached the server, so waiting for the network costs it nothing.
+                now = self._clock()
+                outage_since = now if outage_since is None else outage_since
+                if now - outage_since >= self._outage_patience:
+                    raise
+                delay = min(self._backoff(attempt), OUTAGE_POLL_S)
+                attempt = min(attempt + 1, self._max_retries)
+                log.warning("%s %s failed (%s); retrying in %.0fs", method, url, exc, delay)
             except httpx2.TransportError as exc:
                 if attempt == self._max_retries:
                     raise
                 delay = self._backoff(attempt)
+                attempt += 1
                 log.warning("%s %s failed (%s); retrying in %.0fs", method, url, exc, delay)
             else:
                 if response.status_code not in RETRYABLE_STATUS or attempt == self._max_retries:
                     response.raise_for_status()
                     return response
                 delay = _retry_after(response) or self._backoff(attempt)
+                attempt += 1
                 log.warning(
                     "%s %s -> %s; retrying in %.0fs", method, url, response.status_code, delay
                 )
             self._sleep(delay)
-        raise AssertionError("unreachable")
 
     def close(self) -> None:
         self._client.close()

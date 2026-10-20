@@ -152,7 +152,9 @@ A reach is predicted through its correlated gauge, and AW's flow bands are alrea
 - **Season** matters on its own. The same rain at the same level makes less runoff in July, when trees are in leaf and drawing water, than in March.
 
 ### 5.3 Validation
-Each event's runoff ratio (runoff volume ÷ basin rain volume) must be physically plausible, roughly 0.05–0.8. Outliers point to a bad delineation, the wrong gauge mapping, or regulation we haven't flagged.
+Each event's runoff ratio (runoff volume ÷ basin rain volume) must be physically plausible, roughly 0.05–0.8 for sizable storms. Outliers point to a bad delineation, the wrong gauge mapping, or regulation we haven't flagged.
+
+First results (51 pilot gauges, 2026-10-19): the median storm's ratio is 0.02–0.12 and the 90th percentile 0.2–0.5. Gauges below dams show a median near 0 (the reservoir catches it), and ratios above 1 are winter rain on snow, where melt adds water the rain total doesn't count. Rain-to-peak lag grows with basin size, from ~3 h (urban, 17 mi²) and ~5 h (10 mi²) to 35–55 h (1,000+ mi²), which also confirms the flow and rain clocks line up.
 
 ## 6. Prediction design
 
@@ -237,18 +239,18 @@ For each gauge, the displayed forecast is the best model by hindcast CRPS, or a 
 | Static | Drainage area, slope, elevation, forest %, soil permeability (NLDI characteristics), flashiness index, baseflow index, regime |
 
 ### 6.6 Training data
-- **One hourly aligned table per gauge:**
-  - flow: the hourly mean of 15-minute data, or daily values for old years and big basins
+- **One hourly aligned table per gauge** (`data/hourly/{site}.parquet`: `ts`, `cfs`, `mm`), each hour labeled by its end like the rain products:
+  - flow: the hourly mean of the readings in the hour, which also evens out the mix of 15-, 30-, and 60-minute recording before ~2012
   - basin rain by band: AORC (Stage IV-derived), 2002 onward
   - temperature
 - **Data quality:**
-  - Drop readings flagged as ice-affected or equipment malfunction.
+  - Drop readings flagged as ice-affected, equipment malfunction, or backwater (USGS qualifiers `ICE`, `EQUIP`, `BACKWATER`). Estimated and revised values are kept.
   - Prefer approved data over provisional.
   - Model **discharge (cfs)** as the canonical variable. Use stage (ft) only where no rating curve exists, and convert AW's ft-based ranges with NWPS or USGS ratings.
 - **Split by time, never randomly.** Neighboring hours are correlated, so a random split leaks answers into training.
   - Train on ≤ 2019, validate on 2020–2022, and test on 2023 through the present.
   - Also hold out some gauges entirely (a **spatial holdout**) to test whether the pooled model generalizes.
-- **Storage:** history lives in Parquet files (partitioned by gauge and year) and is queried with DuckDB. It stays on the laptop, not the server.
+- **Storage:** history lives in Parquet files (raw flow by gauge and year, rain by year, hourly tables by gauge) and is queried with DuckDB. It stays on the laptop, not the server.
 
 ### 6.7 Evaluation: how we know it works
 - **Two hindcast modes:**
@@ -325,7 +327,7 @@ Laptop: backfill_history → Parquet + DuckDB → train / hindcast → model art
 | `flow_forecast` | `run_id`, `gauge_id`, `valid_time`, `q05…q95` |
 | `reach_outlook` | `run_id`, `reach_id`, `day`, `p_runnable`, `band_probs` (jsonb), `p_too_high_all_day`, `peak_q10/q50/q90`, `peak_time`, `rain_needed_in`, `drivers` (jsonb) |
 | `rain_response` | `run_id`, `gauge_id`, `day`, `rain_in`, `p_runnable`, `peak_q50`. A precomputed curve for the slider. |
-| `analog_event` | `gauge_id`, `start_ts`, `rain_in`, `max_1h_in`, `duration_h`, `q0`, `qpeak`, `t_peak_h`, `api_7d`, `doy`, `hydrograph` (normalized array) |
+| `analog_event` | For now a laptop Parquet file, `data/events/events.parquet`, loaded to the server once M1 serves What-if. Per storm: `site`, `start`/`end` (first and last wet hour), `rain_mm`, `max_1h_mm`, `max_3h_mm`, `centroid_h`, `q0`, `q0_24h_ago`, rain over the prior 24 h / 7 d / 30 d, `api_mm`, `qpeak`, `peak`, `t_peak_h`, `lag_h`, `peak_complete`, `next_storm_h`, `flow_coverage`, `runoff_mm`, `runoff_ratio`. Hydrographs come from the hourly tables rather than being copied into each event. A storm is wet hours (≥ 0.25 mm) with no 12-hour dry spell, totaling ≥ 0.25 in; its response window runs 96 h past the rain, cut where the next storm starts. |
 | `model_skill` | `gauge_id`, `model_version`, `horizon_h`, `metric`, `value`, `period` |
 | `job_run` | `job`, `started_at`, `finished_at`, `status`, `detail` |
 
@@ -482,6 +484,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-18 | The GitHub repo is public. Scraped data and raw AW pages are never committed. |
 | 2026-10-19 | Rain history comes from AORC v1.1 (1 km, Stage IV-derived since 2002) rather than raw Stage IV files: one public cloud store per year instead of ~210,000 hourly files from a university server. Only basin means are stored (`data/rain/aorc/{year}.parquet`). |
 | 2026-10-19 | Live and recent rain come from Stage IV (NOMADS for the last ~6 days, Iowa State IEM before that), continuing AORC from 2026-01-01. Basin weights use exact cell fractions on Stage IV's own projected grid. |
+| 2026-10-19 | Storm events are defined from basin rain (not from flow peaks), so storms that barely moved the river are kept: "0.4 in at low water did nothing" is an answer too. Back-to-back storms aren't untangled; each event records when the next storm began, and whether its peak arrived before then, so the analog model can choose. |
 | 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)

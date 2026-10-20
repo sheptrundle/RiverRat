@@ -44,6 +44,7 @@ from riverrat.db.session import get_engine
 from riverrat.geo.grid import CellWeights, cell_weights
 from riverrat.http import PoliteClient
 from riverrat.sources import aorc, stage4
+from riverrat.storage import write_parquet
 
 log = logging.getLogger(__name__)
 
@@ -112,7 +113,7 @@ def backfill(
         if existing is not None:
             keep = pc.invert(pc.is_in(existing.column("site"), pa.array(sorted(todo))))
             table = pa.concat_tables([existing.filter(keep), table])
-        _write(path, table.sort_by([("site", "ascending"), ("ts", "ascending")]))
+        write_parquet(path, table.sort_by([("site", "ascending"), ("ts", "ascending")]))
         stats.years_done += 1
         stats.basins_computed += len(todo)
         stats.chunks += chunks
@@ -322,13 +323,6 @@ def _modified_header(response: httpx2.Response) -> datetime | None:
 def _read(path: Path) -> pa.Table:
     # Parquet has no second-precision timestamps; it stores ours as milliseconds.
     return pq.read_table(path).cast(RAIN_SCHEMA)
-
-
-def _write(path: Path, table: pa.Table) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    pq.write_table(table, tmp, compression="zstd")
-    tmp.replace(path)
 
 
 def main() -> int:

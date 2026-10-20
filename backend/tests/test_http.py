@@ -72,3 +72,41 @@ def test_gives_up_after_max_retries():
         with pytest.raises(httpx2.HTTPStatusError):
             client.get("https://example.org")
     assert fake.sleeps == [5.0, 10.0, 20.0, 40.0]
+
+
+def test_waits_out_network_outages():
+    fake = FakeTime()
+    calls = []
+
+    def handler(request):
+        calls.append(fake.now)
+        if fake.now < 600:  # ten minutes without a network
+            raise httpx2.ConnectError("Name or service not known")
+        return httpx2.Response(200, text="ok")
+
+    with make_client(handler, fake) as client:
+        assert client.get("https://example.org").text == "ok"
+    assert fake.sleeps[:4] == [5.0, 10.0, 20.0, 40.0]
+    assert set(fake.sleeps[4:]) == {60.0}  # then checks once a minute
+
+
+def test_gives_up_on_long_outages():
+    fake = FakeTime()
+
+    def handler(request):
+        raise httpx2.ConnectError("Name or service not known")
+
+    with make_client(handler, fake) as client, pytest.raises(httpx2.ConnectError):
+        client.get("https://example.org")
+    assert 30 * 60 <= fake.now < 32 * 60
+
+
+def test_gives_up_on_repeated_read_errors():
+    fake = FakeTime()
+
+    def handler(request):
+        raise httpx2.ReadError("Connection reset by peer")
+
+    with make_client(handler, fake) as client, pytest.raises(httpx2.ReadError):
+        client.get("https://example.org")
+    assert fake.sleeps == [5.0, 10.0, 20.0, 40.0]

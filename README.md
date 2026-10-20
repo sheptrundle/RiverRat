@@ -63,6 +63,10 @@ uv run python -m riverrat.jobs.basins          # NLDI basin polygon per USGS gau
 # Rain history (after basins): hourly basin means from AORC, ~4 min per year
 uv run python -m riverrat.jobs.rain backfill   # 2002 onward -> data/rain/aorc/{year}.parquet
 uv run python -m riverrat.jobs.rain recent     # Stage IV since AORC ends -> Postgres basin_rain
+
+# Training tables and storm events (after the flow and rain backfills; rebuilds from scratch)
+uv run python -m riverrat.jobs.events hourly   # flow + basin rain per hour -> data/hourly/{site}.parquet
+uv run python -m riverrat.jobs.events extract  # past storms and responses -> data/events/events.parquet
 ```
 
 Long backfills can run in a container so they survive closing the terminal:

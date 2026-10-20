@@ -214,8 +214,12 @@ class BackfillStats:
     rows: int = 0
 
 
+def history_dir(data_dir: Path, unit: str, number: str) -> Path:
+    return data_dir / "usgs" / "iv" / unit / number
+
+
 def history_path(data_dir: Path, unit: str, number: str, year: int) -> Path:
-    return data_dir / "usgs" / "iv" / unit / number / f"{year}.parquet"
+    return history_dir(data_dir, unit, number) / f"{year}.parquet"
 
 
 def backfill(
