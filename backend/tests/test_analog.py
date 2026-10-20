@@ -5,6 +5,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from riverrat.features import events, hourly
+from riverrat.forecast.bands import Bands
 from riverrat.jobs import events as event_jobs
 from riverrat.jobs import hindcast
 from riverrat.models import analog
@@ -190,8 +191,13 @@ def test_hindcast_scores_each_model_on_held_out_storms(tmp_path, river):
         ),
     )
 
+    reach = hindcast.Reach(7, Bands("cfs", 150, 400), 38.0, -81.0)
     stats = hindcast.run(
-        data_dir=tmp_path, areas={"01234567": 100.0}, train_end=2019, test=(2020, 2021)
+        data_dir=tmp_path,
+        areas={"01234567": 100.0},
+        train_end=2019,
+        test=(2020, 2021),
+        reaches={"01234567": [reach]},
     )
     assert stats.gauges == 1 and stats.storms > 50
     scores = pq.read_table(hindcast.skill_path(tmp_path, 2020, 2021)).to_pylist()
@@ -201,3 +207,17 @@ def test_hindcast_scores_each_model_on_held_out_storms(tmp_path, river):
         for model in hindcast.MODELS
     }
     assert mean["analog"] < mean["no_matching"] < mean["persistence"]
+
+    days = pq.read_table(hindcast.runnable_path(tmp_path, 2020, 2021)).to_pylist()
+    assert {r["reach_gauge_id"] for r in days} == {7}
+    assert {r["model"] for r in days} == set(hindcast.MODELS)
+    outcomes = {r["runnable"] for r in days}
+    assert outcomes == {True, False}
+    score = {
+        model: hindcast.brier(
+            np.array([r["p_runnable"] for r in days if r["model"] == model]),
+            np.array([r["runnable"] for r in days if r["model"] == model], float),
+        )
+        for model in hindcast.MODELS
+    }
+    assert score["analog"] < score["persistence"]

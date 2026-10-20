@@ -70,7 +70,7 @@ uv run python -m riverrat.jobs.events hourly   # flow + basin rain per hour -> d
 uv run python -m riverrat.jobs.events extract  # past storms and responses -> data/events/events.parquet
 
 # Score the analog model on storms it never saw (library <= 2019; 2023+ is the held-out test)
-uv run python -m riverrat.jobs.hindcast analog # 2020-22 storms -> data/skill/analog_2020-2022.parquet
+uv run python -m riverrat.jobs.hindcast analog # 2020-22 storms -> data/skill/{analog,runnable}_2020-2022.parquet
 ```
 
 Long backfills can run in a container so they survive closing the terminal:

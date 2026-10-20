@@ -13,7 +13,12 @@ use log(1 + cfs), so big rivers don't drown out small creeks:
 - peak_crps / peak_error: the window's peak, as a distribution / median vs. observed
 - peak_in_80: whether the observed peak fell inside the forecast's 10–90% range
 
-Results go to data/skill/analog_{first}-{last}.parquet, one row per storm and model.
+and for each cfs-rated reach on the gauge, each day whose daylight the storm's window
+covers: the forecast chance of being runnable (forecast/daily.py) and whether it was,
+for the Brier score and reliability (does 70% happen 70% of the time?).
+
+Results go to data/skill/analog_{first}-{last}.parquet (one row per storm and model)
+and data/skill/runnable_{first}-{last}.parquet (one row per reach, day, and model).
 """
 
 import argparse
@@ -26,11 +31,15 @@ from pathlib import Path
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from riverrat.config import get_settings
+from riverrat.db.models import Gauge, ReachGauge
 from riverrat.db.session import get_engine
 from riverrat.features import hourly
+from riverrat.forecast.bands import Bands
+from riverrat.forecast.daily import daily
 from riverrat.jobs import events as event_jobs
 from riverrat.models import analog
 from riverrat.models.recession import Recession
@@ -65,8 +74,61 @@ def crps(members: np.ndarray, weights: np.ndarray, observed: np.ndarray) -> np.n
     return spread_to_obs - spread
 
 
+RUNNABLE_SCHEMA = pa.schema(
+    [
+        ("site", pa.string()),
+        ("reach_gauge_id", pa.int64()),
+        ("start", pa.timestamp("s", tz="UTC")),
+        ("day", pa.int32()),  # days after the storm began, 0 = its first day
+        ("model", pa.string()),
+        ("p_runnable", pa.float32()),
+        ("runnable", pa.bool_()),
+    ]
+)
+# A day is scored only if the flow is known for at least this share of its daylight.
+MIN_DAYLIGHT_SEEN = 0.5
+
+
+@dataclass(frozen=True)
+class Reach:
+    """A cfs-rated reach on a gauge, as the hindcast scores it."""
+
+    reach_gauge_id: int
+    bands: Bands
+    lat: float
+    lon: float
+
+
 def skill_path(data_dir: Path, first: int, last: int) -> Path:
     return data_dir / "skill" / f"analog_{first}-{last}.parquet"
+
+
+def runnable_path(data_dir: Path, first: int, last: int) -> Path:
+    return data_dir / "skill" / f"runnable_{first}-{last}.parquet"
+
+
+def reaches_by_site(session: Session) -> dict[str, list[Reach]]:
+    rows = session.execute(
+        select(
+            Gauge.source_id,
+            ReachGauge.id,
+            ReachGauge.range_min,
+            ReachGauge.range_max,
+            func.ST_Y(Gauge.geom),
+            func.ST_X(Gauge.geom),
+        )
+        .join(Gauge, Gauge.id == ReachGauge.gauge_id)
+        .where(Gauge.source == "USGS", ReachGauge.metric == "cfs", Gauge.geom.is_not(None))
+    ).all()
+    session.rollback()
+    out: dict[str, list[Reach]] = defaultdict(list)
+    for site, reach_gauge_id, low, high, lat, lon in rows:
+        try:
+            bands = Bands("cfs", low, high)
+        except ValueError:
+            continue  # no usable range
+        out[site].append(Reach(reach_gauge_id, bands, lat, lon))
+    return out
 
 
 @dataclass
@@ -84,7 +146,9 @@ def hindcast_gauge(
     *,
     train_end: int,
     test: tuple[int, int],
-) -> list[dict]:
+    reaches: list[Reach] = (),
+) -> tuple[list[dict], list[dict]]:
+    """Score rows for each held-out storm, and runnable rows for each of `reaches`."""
     hours = hourly_table["ts"].to_numpy().astype("datetime64[s]")
     cfs = hourly_table["cfs"].to_numpy()
     mm = hourly_table["mm"].to_numpy()
@@ -99,10 +163,10 @@ def hindcast_gauge(
         area_sqmi,
     )
     if len(library) < analog.K:
-        return []
+        return [], []
 
     first = int(hours[0].astype(np.int64))
-    rows = []
+    rows, runnable_rows = [], []
     for event in event_rows:
         if not (test[0] <= event["start"].year <= test[1]):
             continue
@@ -143,6 +207,38 @@ def hindcast_gauge(
                     "peak_in_80": bool(low <= peak <= high),
                 }
             )
+            for reach in reaches:
+                runnable_rows.extend(
+                    _runnable_rows(site, event["start"], model, members, weights, observed, reach)
+                )
+    return rows, runnable_rows
+
+
+def _runnable_rows(site, start, model, members, weights, observed, reach: Reach) -> list[dict]:
+    """Forecast vs. observed runnability for each day the window covers. Hour 0 of
+    `members` and `observed` ends at `start`."""
+    forecast_days = daily(members, weights, start, reach.bands, reach.lat, reach.lon)
+    rows = []
+    for n, day in enumerate(forecast_days):
+        offsets = [
+            h
+            for h in range(len(observed))
+            if day.sunrise <= start + timedelta(hours=h) <= day.sunset
+        ]
+        seen = [h for h in offsets if np.isfinite(observed[h])]
+        if not offsets or len(seen) < MIN_DAYLIGHT_SEEN * len(offsets):
+            continue
+        rows.append(
+            {
+                "site": site,
+                "reach_gauge_id": reach.reach_gauge_id,
+                "start": start,
+                "day": n,
+                "model": model,
+                "p_runnable": day.p_runnable,
+                "runnable": bool(reach.bands.runnable(observed[seen]).any()),
+            }
+        )
     return rows
 
 
@@ -158,31 +254,46 @@ def run(
     train_end: int,
     test: tuple[int, int],
     sites: list[str] | None = None,
+    reaches: dict[str, list[Reach]] | None = None,
 ) -> HindcastStats:
-    """`areas` are basin areas (mi²) by site number, for the runoff cap."""
+    """`areas` are basin areas (mi²) by site number, for the runoff cap; `reaches` the
+    cfs-rated reaches on each gauge, for runnability scores."""
     stats = HindcastStats()
     events_table = pq.read_table(event_jobs.events_path(data_dir))
     by_site: dict[str, list[dict]] = defaultdict(list)
     for row in events_table.to_pylist():
         by_site[row["site"]].append(row)
     rows: list[dict] = []
+    runnable_rows: list[dict] = []
     for site in sorted(sites or by_site):
         path = event_jobs.hourly_path(data_dir, site)
         if site not in by_site or not path.exists():
             stats.skipped_gauges += 1
             continue
         table = pq.read_table(path).cast(hourly.HOURLY_SCHEMA)
-        found = hindcast_gauge(
-            site, by_site[site], table, areas.get(site), train_end=train_end, test=test
+        found, runnable = hindcast_gauge(
+            site,
+            by_site[site],
+            table,
+            areas.get(site),
+            train_end=train_end,
+            test=test,
+            reaches=(reaches or {}).get(site, []),
         )
         if not found:
             stats.skipped_gauges += 1
             continue
         rows.extend(found)
+        runnable_rows.extend(runnable)
         stats.gauges += 1
         stats.storms += len(found) // len(MODELS)
     write_parquet(skill_path(data_dir, *test), pa.Table.from_pylist(rows, schema=SCORE_SCHEMA))
+    write_parquet(
+        runnable_path(data_dir, *test),
+        pa.Table.from_pylist(runnable_rows, schema=RUNNABLE_SCHEMA),
+    )
     _log_summary(rows)
+    _log_runnable(runnable_rows)
     return stats
 
 
@@ -206,6 +317,38 @@ def _log_summary(rows: list[dict]) -> None:
         )
 
 
+def brier(p: np.ndarray, outcome: np.ndarray) -> float:
+    return float(np.mean((p - outcome) ** 2))
+
+
+def reliability(p: np.ndarray, outcome: np.ndarray, bins: int = 5) -> list[tuple]:
+    """(bin low, bin high, forecasts, mean forecast, observed frequency) per bin of p."""
+    edges = np.linspace(0, 1, bins + 1)
+    which = np.clip(np.digitize(p, edges) - 1, 0, bins - 1)
+    return [
+        (
+            edges[b],
+            edges[b + 1],
+            int((which == b).sum()),
+            float(p[which == b].mean()),
+            float(outcome[which == b].mean()),
+        )
+        for b in range(bins)
+        if (which == b).any()
+    ]
+
+
+def _log_runnable(rows: list[dict]) -> None:
+    for model in MODELS:
+        scored = [r for r in rows if r["model"] == model]
+        if not scored:
+            continue
+        p = np.array([r["p_runnable"] for r in scored])
+        outcome = np.array([r["runnable"] for r in scored], float)
+        bins = "  ".join(f"{m:.0%}→{o:.0%} (n={n})" for _, _, n, m, o in reliability(p, outcome))
+        log.info("%-12s runnable brier %.3f  forecast→observed: %s", model, brier(p, outcome), bins)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Perfect-rain hindcasts")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -220,9 +363,11 @@ def main() -> int:
         parser.error("test years must come after --train-end")
     with Session(get_engine()) as session:
         areas = event_jobs.basin_areas(session)
+        reaches = reaches_by_site(session)
     stats = run(
         data_dir=get_settings().data_dir,
         areas=areas,
+        reaches=reaches,
         train_end=args.train_end,
         test=tuple(args.test),
         sites=args.gauge,

@@ -238,6 +238,14 @@ Perfect-rain hindcast, 2020–22, library ≤ 2019, 6,924 storms at 50 gauges. C
 | All storms, unweighted (no matching) | 0.276 | 0.483 | — | 78% |
 | **Analog** | **0.176** | **0.271** | **−11%** | **78%** |
 
+**Daily runnability** (`forecast/daily.py`): for each day from today through the last one the forecast covers, the weighted share of members in range at any hour between sunrise and sunset at the gauge (`forecast/daylight.py`, NOAA solar equations, within ~3 min of published times). Also computed: the band of the daylight peak, P(too high all day), peak percentiles, and median hours in range. Reliability on 2020–22 storms, scored on cfs reaches for the days each storm's window covers (~50,000 reach-days):
+
+| Forecast P(runnable) | ~2% | ~30% | ~50% | ~70% | ~95% | Brier |
+|---|---|---|---|---|---|---|
+| **Analog: observed** | 2% | 29% | 51% | 70% | 93% | **0.060** |
+| No matching: observed | 7% (at 5%) | 29% | 45% | 66% | 93% | 0.092 |
+| Persistence | — | — | — | — | 91% (at 100%); 13% at 0% | 0.130 |
+
 The analog model beats no-matching at every gauge (18–46%); the weakest are below dams and urban. Without the rain stretch, peaks of 1 in+ storms were 26% low. Without the cap, stretching invented floods 3× the record. Not yet handled: several storms in one scenario (needed for the Outlook from forecast rain; M2's job, or M1 composing storms) and regulated releases.
 
 For each gauge, the displayed forecast is the best model by hindcast CRPS, or a skill-weighted blend of models. M1 stays on as the explanation engine even if M2 or M3 wins.
@@ -261,7 +269,7 @@ For each gauge, the displayed forecast is the best model by hindcast CRPS, or a 
 - **Data quality:**
   - Drop readings flagged as ice-affected, equipment malfunction, or backwater (USGS qualifiers `ICE`, `EQUIP`, `BACKWATER`). Estimated and revised values are kept.
   - Prefer approved data over provisional.
-  - Model **discharge (cfs)** as the canonical variable. Use stage (ft) only where no rating curve exists, and convert AW's ft-based ranges with NWPS or USGS ratings.
+  - Model **discharge (cfs)** as the canonical variable. AW rates 37% of reach gauges in feet; for those, forecasts are converted with an empirical rating fitted from each gauge's own paired hourly cfs and ft (`forecast/rating.py`). The fit uses the median stage by log-flow bin over 2 years, shifted by its median error over the last 30 days, which tracks datum changes, and extends above the record along the top slope. On the next 60 days, 112 gauges: median error 0.015 ft, worst 0.42 ft. A 2-year fit without the shift has a worst error of 1.03 ft. The 15 gauges with stage only wait for NWPS/USGS ratings.
 - **Split by time, never randomly.** Neighboring hours are correlated, so a random split leaks answers into training.
   - Train on ≤ 2019, validate on 2020–2022, and test on 2023 through the present.
   - Also hold out some gauges entirely (a **spatial holdout**) to test whether the pooled model generalizes.
@@ -349,10 +357,11 @@ Laptop: backfill_history → Parquet + DuckDB → train / hindcast → model art
 Times are stored in UTC and displayed in the reach's local time zone. Migrations use Alembic.
 
 **Bands**
-- AW provides `beginLowRunnable` and `endHighRunnable`, plus a status string such as `low-runnable` or `medium-runnable`.
-- Our default bands split [min, max] into thirds in log space.
-- In Phase 1 we compare this split against AW's status strings across hundreds of live readings and adjust it to match.
-- The user can override any breakpoint on any reach.
+- AW provides only `beginLowRunnable` and `endHighRunnable`, plus a status string such as `low-runnable` or `medium-runnable`.
+- AW's statuses can't be reproduced from those two numbers. Matching 24 labeled readings to our gauge data (2026-10-20), AW said "medium" at 14% of the way up the log range on the Youghiogheny but "low" at 23% on the French Broad, and "high" at 34% (linear, feet) at Little Falls. Its breakpoints are per reach and unpublished.
+- So our bands (`forecast/bands.py`) split [min, max] into thirds: in log flow for cfs, linearly for feet. With only one bound, the open range is a single runnable band.
+- The headline P(runnable) uses only min and max, so the split affects just the band breakdown.
+- The user can override any breakpoint on any reach (later). Recording AW's reading with each status at every scrape would let us learn its per-reach breakpoints over time.
 
 ## 9. API (FastAPI; read-only for now)
 | Endpoint | Returns |
@@ -502,6 +511,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-19 | Storm events are defined from basin rain (not from flow peaks), so storms that barely moved the river are kept: "0.4 in at low water did nothing" is an answer too. Back-to-back storms aren't untangled; each event records when the next storm began, and whether its peak arrived before then, so the analog model can choose. |
 | 2026-10-19 | M1 replays analogs' rises in log flow, stretched by the rain ratio and capped at 80% runoff, rather than adding their flow excess: lower peak bias on 1 in+ storms (−11% vs −21%) for the same overall score, and the cap keeps extrapolation physical. The library is per gauge (~1,000 storms each), so no pooling yet. |
 | 2026-10-20 | Forecast rain comes from NBM's 6-hour percentile fields, read by byte range and averaged per basin (each percentile grid's basin mean stands in for the percentile of the basin mean). Seven percentiles per period instead of all 21 keep a run at ~170 MB. Checked on the 2026-10-10/11 storm: for the run 12–36 h before, observed basin rain fell inside its p10–p90 range at 80% of basins (the rest above p90), with a correlation of 0.63 against Stage IV. |
+| 2026-10-20 | Low/medium/high are our own thirds of AW's range (log for cfs, linear for feet), because AW's statuses use unpublished per-reach breakpoints. Feet-rated reaches use a per-gauge empirical rating (2-year shape plus a 30-day offset) rather than waiting for official ratings. A paddling day is sunrise to sunset at the gauge, with days labeled by the date at solar noon, which avoids a time-zone lookup. |
 | 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)
