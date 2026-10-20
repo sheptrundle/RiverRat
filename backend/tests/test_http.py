@@ -110,3 +110,15 @@ def test_gives_up_on_repeated_read_errors():
     with make_client(handler, fake) as client, pytest.raises(httpx2.ReadError):
         client.get("https://example.org")
     assert fake.sleeps == [5.0, 10.0, 20.0, 40.0]
+
+
+def test_sends_extra_headers():
+    seen = []
+
+    def handler(request):
+        seen.append(request.headers.get("Range"))
+        return httpx2.Response(206, content=b"ab")
+
+    with make_client(handler, FakeTime()) as client:
+        assert client.get("https://example.org", headers={"Range": "bytes=0-1"}).content == b"ab"
+    assert seen == ["bytes=0-1"]

@@ -63,6 +63,7 @@ uv run python -m riverrat.jobs.basins          # NLDI basin polygon per USGS gau
 # Rain history (after basins): hourly basin means from AORC, ~4 min per year
 uv run python -m riverrat.jobs.rain backfill   # 2002 onward -> data/rain/aorc/{year}.parquet
 uv run python -m riverrat.jobs.rain recent     # Stage IV since AORC ends -> Postgres basin_rain
+uv run python -m riverrat.jobs.rain_forecast archive  # NBM rain percentiles -> Postgres rain_forecast
 
 # Training tables and storm events (after the flow and rain backfills; rebuilds from scratch)
 uv run python -m riverrat.jobs.events hourly   # flow + basin rain per hour -> data/hourly/{site}.parquet
@@ -87,6 +88,7 @@ The `worker` container (`docker compose up -d worker`) runs recurring jobs from 
 |---|---|---|
 | `noaa-archive` | 3 h | `noaa link`, `noaa archive` |
 | `rain-recent` | 1 h | `rain recent --max-hours 48` (new Stage IV hours, plus revisions from the last 2 days) |
+| `rain-forecast` | 1 h | `rain_forecast archive` (NBM 00/06/12/18Z runs from the last 2 days not yet stored) |
 
 After changing backend code, rebuild with `docker compose up -d --build worker`.
 

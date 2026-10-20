@@ -41,9 +41,9 @@ from sqlalchemy.orm import Session
 from riverrat.config import get_settings
 from riverrat.db.models import Basin, BasinRain, Gauge, RainHour
 from riverrat.db.session import get_engine
-from riverrat.geo.grid import CellWeights, cell_weights
+from riverrat.geo.grid import CellWeights, basin_mean, cell_weights
 from riverrat.http import PoliteClient
-from riverrat.sources import aorc, stage4
+from riverrat.sources import aorc, grib, stage4
 from riverrat.storage import write_parquet
 
 log = logging.getLogger(__name__)
@@ -72,10 +72,10 @@ class RainStats:
 
 
 def load_basins(session: Session) -> dict[str, BaseGeometry]:
-    return {site: geom for _, site, geom in _basin_rows(session)}
+    return {site: geom for _, site, geom in basin_rows(session)}
 
 
-def _basin_rows(session: Session) -> list[tuple[int, str, BaseGeometry]]:
+def basin_rows(session: Session) -> list[tuple[int, str, BaseGeometry]]:
     rows = session.execute(
         select(Gauge.id, Gauge.source_id, func.ST_AsGeoJSON(Basin.geom))
         .join(Basin, Basin.gauge_id == Gauge.id)
@@ -208,7 +208,7 @@ def update_recent(
     """Basin rain for every hour ending after `start`, newest first."""
     stats = RecentStats()
     now = now or datetime.now(UTC)
-    basins = _basin_rows(session)
+    basins = basin_rows(session)
     seen = dict(
         session.execute(
             select(RainHour.ts, RainHour.file_modified).where(
@@ -235,7 +235,7 @@ def update_recent(
         stats.remaining = max(len(todo) - max_hours, 0)
         todo = todo[:max_hours]
 
-    weights: tuple[stage4.Grid, list[CellWeights]] | None = None
+    weights: tuple[grib.Grid, list[CellWeights]] | None = None
     for hour in todo:
         try:
             response = client.get(stage4.url_for(hour, now))
@@ -264,20 +264,14 @@ def update_recent(
     return stats
 
 
-def _grid_weights(grid: stage4.Grid, geoms: list[BaseGeometry]) -> list[CellWeights]:
+def _grid_weights(grid: grib.Grid, geoms: list[BaseGeometry]) -> list[CellWeights]:
     return [cell_weights(grid.project(g), grid.y, grid.x, geographic=False) for g in geoms]
 
 
 def _store_hour(session, hour, field, basins, weights, file_modified) -> None:
     rows = []
     for (gauge_id, _, _), cells in zip(basins, weights, strict=True):
-        mm = None
-        if len(cells.weights):
-            values = field.mm[cells.rows, cells.cols]
-            valid = ~np.isnan(values)
-            covered = cells.weights[valid].sum()
-            if covered >= MIN_COVERAGE * cells.weights.sum():
-                mm = float(values[valid] @ cells.weights[valid] / covered)
+        mm = basin_mean(field.mm, cells, MIN_COVERAGE)
         rows.append({"gauge_id": gauge_id, "source": STAGE4, "ts": hour, "mm": mm})
     if rows:
         stmt = insert(BasinRain).values(rows)

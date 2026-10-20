@@ -63,3 +63,16 @@ def _index_range(edges: np.ndarray, low: float, high: float) -> tuple[int, int]:
     start = max(int(np.searchsorted(edges, low, side="right")) - 1, 0)
     stop = min(int(np.searchsorted(edges, high, side="left")), len(edges) - 1)
     return start, max(start, stop)
+
+
+def basin_mean(field: np.ndarray, cells: CellWeights, min_coverage: float) -> float | None:
+    """Area-weighted mean of a grid (rows × cols, NaN = missing) over a basin's cells, or
+    None when less than `min_coverage` of the basin has data."""
+    if not len(cells.weights):
+        return None
+    values = field[cells.rows, cells.cols]
+    valid = ~np.isnan(values)
+    covered = cells.weights[valid].sum()
+    if covered < min_coverage * cells.weights.sum():
+        return None
+    return float(values[valid] @ cells.weights[valid] / covered)

@@ -115,12 +115,12 @@ Everything below was checked as live on 2026-10-18 unless marked *(verify in spi
 ### 4.4 Precipitation: forecast
 | Product | Role |
 |---|---|
-| **NBM v4.x** (National Blend of Models): 2.5 km, out to about 11 days, includes **probabilistic QPF percentiles** | **Primary scenario source**, because it gives calibrated rain uncertainty. Its AWS archive goes back to about 2020 *(verify)*, which enables realistic hindcasts. |
+| **NBM v4.x** (National Blend of Models): 2.5 km Lambert conformal; `qmd` files carry **6-hour rain totals as percentiles** (every 5% now, every 1% before late 2023), to ~8 days from the 00/06/12/18Z runs | **Primary scenario source**, because it gives calibrated rain uncertainty. Archived since 2026-10-20 (`jobs/rain_forecast`): p5, p10, p25, p50, p75, p90, p95 per basin and 6-hour period to 144 h, ~170 MB of byte-range reads and ~25 s per run. The AWS bucket keeps every run since 2020-05-18, so past runs can be backfilled for real-forecast hindcasts (one run a day since 2020 is ~380 GB of reads). |
 | HRRR: 3 km, 0–48 h | Phase 6: sharper detail on convective storms for days 0–2 |
 | GEFS: 31 members, 16 days | Phase 6: physically consistent multi-day scenarios |
 | NWS API `api.weather.gov` gridpoint QPF | Display convenience only (point forecasts) |
 
-Gridded products are fetched with **Herbie**. It downloads only the precipitation fields from the GRIB2 files on AWS (byte-range requests), so bandwidth stays tiny.
+Gridded products are fetched directly: each GRIB2 file's `.idx` gives byte offsets, so only the precipitation fields are downloaded (no Herbie dependency).
 
 ### 4.5 Geospatial and other inputs
 - **USGS NLDI** (`api.water.usgs.gov/nldi`):
@@ -336,7 +336,7 @@ Laptop: backfill_history → Parquet + DuckDB → train / hindcast → model art
 | `grid_weight` | `grid_id`, `gauge_id`, `band_no`, `cell_idx`, `weight` |
 | `observation` | `gauge_id`, `param`, `ts`, `value`, `qualifier`. Partitioned by month; about 60 days kept on the server. |
 | `precip_basin_obs` | `gauge_id`, `band_no`, `ts`, `product`, `mm` |
-| `precip_basin_fcst` | `gauge_id`, `band_no`, `issued_at`, `valid_start`, `valid_end`, `p10…p90`, `mean`. **Archived forever.** |
+| `rain_forecast` (was `precip_basin_fcst`) | `gauge_id`, `source` (`nbm`), `issued_at`, `valid_end` (6-hour periods), `p05`, `p10`, `p25`, `p50`, `p75`, `p90`, `p95`; `rain_forecast_run` marks complete runs. **Archived forever** (~12 M rows a year at 4 runs a day). |
 | `noaa_flow_fcst` | `gauge_id`, `source` (`nwm_sr`/`nwm_mr`/`rfc`), `issued_at`, `valid_time`, `flow`. **Archived forever.** |
 | `forecast_run` | `id`, `issued_at`, `model_version`, `status` |
 | `flow_forecast` | `run_id`, `gauge_id`, `valid_time`, `q05…q95` |
@@ -501,12 +501,13 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-19 | Live and recent rain come from Stage IV (NOMADS for the last ~6 days, Iowa State IEM before that), continuing AORC from 2026-01-01. Basin weights use exact cell fractions on Stage IV's own projected grid. |
 | 2026-10-19 | Storm events are defined from basin rain (not from flow peaks), so storms that barely moved the river are kept: "0.4 in at low water did nothing" is an answer too. Back-to-back storms aren't untangled; each event records when the next storm began, and whether its peak arrived before then, so the analog model can choose. |
 | 2026-10-19 | M1 replays analogs' rises in log flow, stretched by the rain ratio and capped at 80% runoff, rather than adding their flow excess: lower peak bias on 1 in+ storms (−11% vs −21%) for the same overall score, and the cap keeps extrapolation physical. The library is per gauge (~1,000 storms each), so no pooling yet. |
+| 2026-10-20 | Forecast rain comes from NBM's 6-hour percentile fields, read by byte range and averaged per basin (each percentile grid's basin mean stands in for the percentile of the basin mean). Seven percentiles per period instead of all 21 keep a run at ~170 MB. Checked on the 2026-10-10/11 storm: for the run 12–36 h before, observed basin rain fell inside its p10–p90 range at 80% of basins (the rest above p90), with a correlation of 0.63 against Stage IV. |
 | 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)
 - ~~How to discover AW reach IDs~~ (solved: one index request). Still open: the full list of AW gauge `source` types; whether our band split matches AW's status strings.
 - ~~USGS history depth and rate limits~~ (solved: 15-min data back to 1972 at the oldest pilot gauge; 1,000 requests/hour with a key).
-- When the NBM archive on AWS starts, and which QPF percentile fields and periods each model run provides.
+- ~~When the NBM archive on AWS starts, and which QPF percentile fields and periods each model run provides.~~ May 2020; 6-hour percentiles from the 00/06/12/18Z runs (§4.4).
 - ~~Stage IV backfill route~~ (solved: AORC Zarr on AWS, read chunk by chunk; basin means only, raw grids never kept).
 - ~~Live and recent rain~~ (solved: Stage IV, which matches AORC far more closely than MRMS).
 - NWM medium range for days 2–6: read `medium_range_blend` from AWS directly (~600 MB/day for 3-hourly steps out to 6 days; less if HDF5 range reads can fetch only our reaches), or wait for NWPS to serve it again.

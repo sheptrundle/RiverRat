@@ -45,19 +45,21 @@ class PoliteClient:
         self._clock = clock
         self._last_request: float | None = None
 
-    def get(self, url: str) -> httpx2.Response:
-        return self._request("GET", url)
+    def get(self, url: str, headers: dict[str, str] | None = None) -> httpx2.Response:
+        return self._request("GET", url, headers)
 
     def head(self, url: str) -> httpx2.Response:
         return self._request("HEAD", url)
 
-    def _request(self, method: str, url: str) -> httpx2.Response:
+    def _request(
+        self, method: str, url: str, headers: dict[str, str] | None = None
+    ) -> httpx2.Response:
         attempt = 0
         outage_since: float | None = None
         while True:
             self._wait_turn()
             try:
-                response = self._client.request(method, url)
+                response = self._client.request(method, url, headers=headers)
             except httpx2.ConnectError as exc:
                 # Nothing reached the server, so waiting for the network costs it nothing.
                 now = self._clock()

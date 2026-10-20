@@ -29,6 +29,8 @@ JOBS = (
     Job("noaa-archive", (("noaa", "link"), ("noaa", "archive")), timedelta(hours=3)),
     # Stage IV basin rain: new hours plus revisions; a long gap catches up 48 hours a run.
     Job("rain-recent", (("rain", "recent", "--max-hours", "48"),), timedelta(hours=1)),
+    # NBM rain forecasts: each 00/06/12/18Z run once it's fully published (~4 h later).
+    Job("rain-forecast", (("rain_forecast", "archive"),), timedelta(hours=1)),
 )
 
 

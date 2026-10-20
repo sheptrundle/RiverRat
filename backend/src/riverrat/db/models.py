@@ -174,3 +174,35 @@ class RainHour(Base):
     ts: Mapped[datetime] = mapped_column(primary_key=True)
     file_modified: Mapped[datetime | None]
     fetched_at: Mapped[datetime]
+
+
+class RainForecast(Base):
+    """Forecast basin rain, archived forever for hindcasts (DESIGN.md §6.7): each run's
+    6-hour totals ending at `valid_end`, as percentiles of the basin mean (approximated
+    by the basin mean of each percentile grid, DESIGN.md §6.2). `source` is "nbm"."""
+
+    __tablename__ = "rain_forecast"
+
+    gauge_id: Mapped[int] = mapped_column(
+        ForeignKey("gauge.id", ondelete="CASCADE"), primary_key=True
+    )
+    source: Mapped[str] = mapped_column(String(16), primary_key=True)
+    issued_at: Mapped[datetime] = mapped_column(primary_key=True)
+    valid_end: Mapped[datetime] = mapped_column(primary_key=True)
+    p05: Mapped[float | None]
+    p10: Mapped[float | None]
+    p25: Mapped[float | None]
+    p50: Mapped[float | None]
+    p75: Mapped[float | None]
+    p90: Mapped[float | None]
+    p95: Mapped[float | None]
+
+
+class RainForecastRun(Base):
+    """A forecast run stored for every basin and period."""
+
+    __tablename__ = "rain_forecast_run"
+
+    source: Mapped[str] = mapped_column(String(16), primary_key=True)
+    issued_at: Mapped[datetime] = mapped_column(primary_key=True)
+    fetched_at: Mapped[datetime]
