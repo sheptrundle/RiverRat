@@ -193,8 +193,8 @@ class EventStats:
     events: int = 0
 
 
-def extract(session: Session, *, data_dir: Path) -> EventStats:
-    """Every storm event at every gauge with an hourly table, in one file."""
+def basin_areas(session: Session) -> dict[str, float]:
+    """Basin area (mi²) by USGS site number."""
     areas = dict(
         session.execute(
             select(Gauge.source_id, Basin.area_sqmi)
@@ -203,6 +203,12 @@ def extract(session: Session, *, data_dir: Path) -> EventStats:
         ).all()
     )
     session.rollback()
+    return areas
+
+
+def extract(session: Session, *, data_dir: Path) -> EventStats:
+    """Every storm event at every gauge with an hourly table, in one file."""
+    areas = basin_areas(session)
     stats = EventStats()
     tables = []
     for path in sorted((data_dir / "hourly").glob("*.parquet")):

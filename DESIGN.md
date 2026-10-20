@@ -225,6 +225,21 @@ Owner decisions:
 | **M2** | **Pooled quantile gradient boosting** (LightGBM) | One regional model across all pilot gauges, trained on forecast issue times every 6 h through history. Features are listed in §6.5. Targets are `log(Q(t₀+h)/Q₀)` for h ∈ {3, 6, 12, 24, 36, 48, 72, 96, 120, 144} h, with quantile loss from p05 to p95. | Probabilistic, fast, and robust. Pooling helps gauges with short records, and the NWM forecast can be a feature. **Expected to be the primary model.** |
 | **M3** | **LSTM** (NeuralHydrology, multi-timescale) | A sequence model on hourly and daily inputs plus static basin attributes, trained on all basins jointly | State of the art in large-sample hydrology (Kratzert et al. 2019; Google Flood Hub). A research track once M2 is solid. |
 
+**M1 as built** (`models/analog.py`, 2026-10-19):
+- **Matching:** the 60 nearest past storms at the gauge, weighted by similarity (tricube). Features: flow at rain start, rain total, duration, peak 3-hour intensity, antecedent precipitation index, and season.
+- **Replay:** each analog's rise in log(1 + cfs) is stretched by the rain ratio (clipped to 0.5–2×), and capped so no replay runs off more than 80% of the rain. The hydrograph is observed until the next storm, then continues on the gauge's fitted recession curve (`models/recession.py`, also the M0 "no more rain" path).
+- **Forecasts flag `extrapolated`** when the rain exceeds every matched storm.
+
+Perfect-rain hindcast, 2020–22, library ≤ 2019, 6,924 storms at 50 gauges. CRPS is in log(1 + cfs), lower is better.
+
+| Model | Hourly CRPS | Peak CRPS | Peak bias, 1 in+ storms | Peaks inside 80% range |
+|---|---|---|---|---|
+| Persistence | 0.432 | 1.022 | — | 1% |
+| All storms, unweighted (no matching) | 0.276 | 0.483 | — | 78% |
+| **Analog** | **0.176** | **0.271** | **−11%** | **78%** |
+
+The analog model beats no-matching at every gauge (18–46%); the weakest are below dams and urban. Without the rain stretch, peaks of 1 in+ storms were 26% low. Without the cap, stretching invented floods 3× the record. Not yet handled: several storms in one scenario (needed for the Outlook from forecast rain; M2's job, or M1 composing storms) and regulated releases.
+
 For each gauge, the displayed forecast is the best model by hindcast CRPS, or a skill-weighted blend of models. M1 stays on as the explanation engine even if M2 or M3 wins.
 
 ### 6.5 Feature catalog
@@ -485,6 +500,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-19 | Rain history comes from AORC v1.1 (1 km, Stage IV-derived since 2002) rather than raw Stage IV files: one public cloud store per year instead of ~210,000 hourly files from a university server. Only basin means are stored (`data/rain/aorc/{year}.parquet`). |
 | 2026-10-19 | Live and recent rain come from Stage IV (NOMADS for the last ~6 days, Iowa State IEM before that), continuing AORC from 2026-01-01. Basin weights use exact cell fractions on Stage IV's own projected grid. |
 | 2026-10-19 | Storm events are defined from basin rain (not from flow peaks), so storms that barely moved the river are kept: "0.4 in at low water did nothing" is an answer too. Back-to-back storms aren't untangled; each event records when the next storm began, and whether its peak arrived before then, so the analog model can choose. |
+| 2026-10-19 | M1 replays analogs' rises in log flow, stretched by the rain ratio and capped at 80% runoff, rather than adding their flow excess: lower peak bias on 1 in+ storms (−11% vs −21%) for the same overall score, and the cap keeps extrapolation physical. The library is per gauge (~1,000 storms each), so no pooling yet. |
 | 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)
