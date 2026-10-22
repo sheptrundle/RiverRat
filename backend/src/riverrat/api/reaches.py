@@ -2,8 +2,10 @@
 curve over storm sizes.
 
 A reach is forecast through its gauge: the primary USGS gauge with a usable runnable
-range (any USGS one if the primary isn't). Flows are modeled in cfs and reported in the
-range's units, through the gauge's stage rating for reaches rated in feet.
+range. When the primary can't be used (often an AW "calculated" gauge), another of the
+reach's USGS gauges stands in, preferring one on the same river. Flows are modeled in
+cfs and reported in the range's units, through the gauge's stage rating for reaches
+rated in feet.
 """
 
 from collections.abc import Callable, Iterator
@@ -57,6 +59,19 @@ NowDep = Annotated[datetime, Depends(get_now)]
 # --- response models -----------------------------------------------------------------
 
 
+class ReachSummary(BaseModel):
+    id: int
+    aw_id: int | None
+    river: str
+    section: str
+    difficulty: str | None
+    states: list[str]
+    gauge_site: str | None  # the primary gauge
+    metric: str | None
+    range_min: float | None
+    range_max: float | None
+
+
 class ReachInfo(BaseModel):
     id: int
     aw_id: int | None
@@ -69,6 +84,7 @@ class GaugeInfo(BaseModel):
     id: int
     site: str
     name: str
+    primary: bool  # False: standing in for AW's primary gauge
 
 
 class BandsInfo(BaseModel):
@@ -104,6 +120,14 @@ class Fan(BaseModel):
     p90: list[float]
 
 
+class Series(BaseModel):
+    """Hourly values in the range's units; value i ends at start + i hours (None = no
+    readings)."""
+
+    start: datetime
+    values: list[float | None]
+
+
 class Peak(BaseModel):
     p10: float
     p50: float
@@ -136,6 +160,7 @@ class WhatIf(BaseModel):
     gauge: GaugeInfo
     bands: BandsInfo
     now: Now
+    observed: Series  # the last 48 hours, through now.at
     storm: StormInfo
     forecast: Fan
     days: list[DayOut]
@@ -186,6 +211,7 @@ class Target:
     library: analog.AnalogLibrary
     current: live.Current
     to_units: Callable
+    primary: bool
 
 
 def _target(session: Session, data_dir: Path, reach_id: int, now: datetime) -> Target:
@@ -202,8 +228,10 @@ def _target(session: Session, data_dir: Path, reach_id: int, now: datetime) -> T
             Gauge.geom.is_not(None),
             ReachGauge.metric.in_(("cfs", "ft")),
         )
-        .order_by(ReachGauge.is_primary.desc(), ReachGauge.id)
+        .order_by(ReachGauge.id)
     ).all()
+    river = reach.river.lower()
+    rows = sorted(rows, key=lambda r: (not r[0].is_primary, river not in r[1].name.lower()))
     problem = "the reach has no USGS gauge with a runnable range"
     for link, gauge, lat, lon, area in rows:
         try:
@@ -225,7 +253,7 @@ def _target(session: Session, data_dir: Path, reach_id: int, now: datetime) -> T
         if current is None:
             problem = f"gauge {gauge.source_id} has no reading in the last 48 hours"
             continue
-        return Target(reach, gauge, bands, lat, lon, library, current, to_units)
+        return Target(reach, gauge, bands, lat, lon, library, current, to_units, link.is_primary)
     raise HTTPException(409, problem)
 
 
@@ -243,8 +271,9 @@ def _reach_info(reach: Reach) -> ReachInfo:
     )
 
 
-def _gauge_info(gauge: Gauge) -> GaugeInfo:
-    return GaugeInfo(id=gauge.id, site=gauge.source_id, name=gauge.name)
+def _gauge_info(target: Target) -> GaugeInfo:
+    gauge = target.gauge
+    return GaugeInfo(id=gauge.id, site=gauge.source_id, name=gauge.name, primary=target.primary)
 
 
 def _bands_info(bands: Bands) -> BandsInfo:
@@ -278,6 +307,14 @@ def _quantiles(values) -> dict:
     }
 
 
+def _observed(target: Target) -> Series:
+    values = target.to_units(target.current.recent_cfs)
+    return Series(
+        start=target.current.recent_start,
+        values=[float(v) if np.isfinite(v) else None for v in values],
+    )
+
+
 def _day_out(day: Day) -> DayOut:
     return DayOut(
         day=day.day,
@@ -292,6 +329,31 @@ def _day_out(day: Day) -> DayOut:
 
 
 # --- endpoints -----------------------------------------------------------------------
+
+
+@router.get("")
+def list_reaches(session: SessionDep) -> list[ReachSummary]:
+    """Every reach with its primary gauge and runnable range (no forecasts)."""
+    rows = session.execute(
+        select(
+            Reach, Gauge.source_id, ReachGauge.metric, ReachGauge.range_min, ReachGauge.range_max
+        )
+        .outerjoin(ReachGauge, (ReachGauge.reach_id == Reach.id) & ReachGauge.is_primary)
+        .outerjoin(Gauge, Gauge.id == ReachGauge.gauge_id)
+        .order_by(Reach.river, Reach.section, ReachGauge.id)
+    ).all()
+    out: dict[int, ReachSummary] = {}
+    for reach, site, metric, low, high in rows:
+        if reach.id not in out:
+            out[reach.id] = ReachSummary(
+                **_reach_info(reach).model_dump(),
+                states=reach.states,
+                gauge_site=site,
+                metric=metric,
+                range_min=low,
+                range_max=high,
+            )
+    return list(out.values())
 
 
 @router.get("/{reach_id}/whatif")
@@ -319,9 +381,10 @@ def whatif(
     days = daily(values, forecast.weights, forecast.start, target.bands, target.lat, target.lon)
     return WhatIf(
         reach=_reach_info(target.reach),
-        gauge=_gauge_info(target.gauge),
+        gauge=_gauge_info(target),
         bands=_bands_info(target.bands),
         now=_now(target),
+        observed=_observed(target),
         storm=StormInfo(
             rain_in=rain_in,
             type=storm,
@@ -389,7 +452,7 @@ def rain_response(
         )
     return RainResponse(
         reach=_reach_info(target.reach),
-        gauge=_gauge_info(target.gauge),
+        gauge=_gauge_info(target),
         bands=_bands_info(target.bands),
         now=_now(target),
         storm_type=storm,

@@ -8,5 +8,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: { "/api": apiTarget },
+    // File events don't cross Docker Desktop's bind mount reliably on macOS, so poll there.
+    watch: process.env.WATCH_POLL ? { usePolling: true, interval: 300 } : undefined,
   },
 });

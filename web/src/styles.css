@@ -1,0 +1,383 @@
+:root {
+  --bg: #f7f8f6;
+  --panel: #ffffff;
+  --text: #1d2420;
+  --muted: #66706a;
+  --line: #dde2de;
+  --accent: #1f6f8b;
+  --band-too-low: #b9bdb9;
+  --band-low: #a8d5a2;
+  --band-medium: #4caf6a;
+  --band-high: #3b8fc4;
+  --band-too-high: #d9534f;
+  --fan: rgba(31, 111, 139, 0.22);
+  --median: #1f6f8b;
+  --observed: #1d2420;
+  --rain: #3b6fd4;
+  --daylight: #f2c94c;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #121614;
+    --panel: #1b201d;
+    --text: #e3e8e4;
+    --muted: #96a19a;
+    --line: #2e3531;
+    --accent: #6cc0dc;
+    --band-too-low: #4d524e;
+    --band-low: #3f6b3a;
+    --band-medium: #3c9a57;
+    --band-high: #2f78a8;
+    --band-too-high: #b54541;
+    --fan: rgba(108, 192, 220, 0.25);
+    --median: #6cc0dc;
+    --observed: #e3e8e4;
+    --rain: #7a9ff0;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 16px 24px 48px;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+h1 {
+  margin: 0;
+  font-size: 22px;
+}
+h1 a {
+  color: var(--text);
+}
+h2 {
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+
+.top {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 13px;
+}
+.error {
+  color: var(--band-too-high);
+}
+.warning {
+  background: rgba(242, 201, 76, 0.18);
+  border-left: 3px solid var(--daylight);
+  padding: 6px 10px;
+}
+
+footer {
+  margin-top: 32px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+/* reach list */
+.filters {
+  display: flex;
+  gap: 8px;
+}
+input[type="text"],
+input:not([type]),
+select {
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+}
+.filters input {
+  flex: 1;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th,
+td {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+th {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.nowrap {
+  white-space: nowrap;
+}
+table.reaches tbody tr {
+  cursor: pointer;
+}
+table.reaches tbody tr:hover {
+  background: var(--panel);
+}
+
+/* reach page */
+.reach.loading .chart,
+.reach.loading .days {
+  opacity: 0.6;
+  transition: opacity 0.2s;
+}
+.reach-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+.reach-header p {
+  margin: 0;
+}
+.now-box {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+.now-box strong {
+  font-size: 26px;
+}
+.chip {
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: end;
+  margin-bottom: 12px;
+}
+.controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.controls input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.segmented {
+  display: flex;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.segmented button {
+  font: inherit;
+  padding: 6px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.segmented button.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.chart {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.chart .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.chart .tick {
+  font-size: 12px;
+  fill: var(--muted);
+}
+.chart .median {
+  fill: none;
+  stroke: var(--median);
+  stroke-width: 2;
+}
+.chart .observed {
+  fill: none;
+  stroke: var(--observed);
+  stroke-width: 2.5;
+}
+.chart .now {
+  stroke: var(--muted);
+  stroke-dasharray: 4 3;
+}
+.chart .runnable-line {
+  fill: none;
+  stroke: var(--band-medium);
+  stroke-width: 3;
+}
+.chart .too-high-line {
+  fill: none;
+  stroke: var(--band-too-high);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+.chart .needed {
+  stroke: var(--text);
+  stroke-dasharray: 2 3;
+}
+
+.legend {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 6px 0 12px;
+}
+.key {
+  display: inline-block;
+  width: 18px;
+  height: 10px;
+  margin: 0 4px 0 10px;
+  vertical-align: middle;
+}
+.key.observed {
+  border-top: 3px solid var(--observed);
+  height: 0;
+}
+.key.median {
+  border-top: 2px solid var(--median);
+  height: 0;
+}
+.key.fan {
+  background: var(--fan);
+}
+.key.rain {
+  background: var(--rain);
+}
+.key.daylight {
+  background: var(--daylight);
+  height: 5px;
+}
+.key.runnable {
+  border-top: 3px solid var(--band-medium);
+  height: 0;
+}
+.key.too-high {
+  border-top: 2px dashed var(--band-too-high);
+  height: 0;
+}
+
+.days {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+.day {
+  font: inherit;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+.day.on {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.day strong {
+  font-size: 22px;
+}
+.too-high {
+  color: var(--band-too-high);
+}
+.band-bar {
+  display: flex;
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+}
+
+.weight {
+  display: inline-block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--accent);
+}
+
+@media (max-width: 720px) {
+  main {
+    padding: 12px 16px 32px;
+  }
+  .reach-header,
+  .controls {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .days {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .panel {
+    padding: 12px;
+  }
+  .now-box {
+    align-items: flex-start;
+  }
+  table.analogs th:nth-child(3),
+  table.analogs td:nth-child(3),
+  table.reaches th:nth-child(4),
+  table.reaches td:nth-child(4) {
+    display: none;
+  }
+}

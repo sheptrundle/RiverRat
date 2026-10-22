@@ -122,6 +122,18 @@ def test_whatif_forecasts_one_storm(client, session):
     assert big["bands"]["edges"][0] == 150
 
 
+def test_reach_list_and_observed_hours(client, session):
+    reach_id = add_reach(session)
+    listed = client.get("/api/reaches").json()
+    assert [(r["id"], r["gauge_site"], r["range_min"]) for r in listed] == [(reach_id, SITE, 150)]
+
+    body = client.get(f"/api/reaches/{reach_id}/whatif").json()
+    observed = body["observed"]
+    assert observed["values"][-1] == pytest.approx(BASE)
+    assert observed["values"][0] is None  # readings only cover the last 3 hours
+    assert len(observed["values"]) == 49  # 48 hours back through now.at
+
+
 def test_no_rain_follows_the_recession(client, session):
     reach_id = add_reach(session)
     body = client.get(f"/api/reaches/{reach_id}/whatif", params={"rain_in": 0}).json()
@@ -177,6 +189,44 @@ def test_ft_reaches_use_the_stage_rating(client, session, lake):
     assert body["now"]["value"] == pytest.approx(4 * np.log(5) / np.log(100), rel=1e-6)
     assert body["now"]["band"] == "low"
     assert body["now"]["ft_observed"] == pytest.approx(1.5)
+
+
+def test_a_stand_in_gauge_on_the_same_river_is_preferred(client, session):
+    reach_id = add_reach(session)  # "Synthetic Creek" on SITE, primary
+    link = session.query(ReachGauge).one()
+    link.is_primary = False
+    other = Gauge(
+        source="USGS",
+        source_id="09999999",
+        name="OTHER RIVER NEAR SOMEWHERE",
+        geom=func.ST_GeomFromText("POINT(-81 38)", 4326),
+    )
+    calculated = Gauge(source="CALCULATED", source_id="1", name="Synthetic Calculated")
+    session.add_all([other, calculated])
+    session.flush()
+    session.add_all(
+        [
+            ReachGauge(
+                reach_id=reach_id,
+                gauge_id=other.id,
+                is_primary=False,
+                metric="cfs",
+                range_min=1,
+                range_max=9,
+            ),
+            ReachGauge(
+                reach_id=reach_id,
+                gauge_id=calculated.id,
+                is_primary=True,
+                metric="cfs",
+                range_min=1,
+                range_max=9,
+            ),
+        ]
+    )
+    session.commit()
+    gauge = client.get(f"/api/reaches/{reach_id}/whatif").json()["gauge"]
+    assert (gauge["site"], gauge["primary"]) == (SITE, False)
 
 
 def test_reaches_that_cant_be_forecast(client, session):

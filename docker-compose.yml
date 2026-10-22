@@ -57,6 +57,7 @@ services:
     environment:
       API_PROXY_TARGET: http://api:8000
       COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      WATCH_POLL: "1"
     ports:
       - "5173:5173"
     volumes:

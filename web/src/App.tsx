@@ -1,38 +1,43 @@
 import { useEffect, useState } from "react";
+import ReachList from "./ReachList";
+import ReachPage from "./ReachPage";
 
-type Health = {
-  status: string;
-  database: { ok: boolean; postgis?: string; error?: string };
-};
+function useHash(): string {
+  const [hash, setHash] = useState(location.hash);
+  useEffect(() => {
+    const update = () => setHash(location.hash);
+    window.addEventListener("hashchange", update);
+    return () => window.removeEventListener("hashchange", update);
+  }, []);
+  return hash;
+}
 
 export default function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
+  const reach = useHash().match(/^#\/reach\/(\d+)/);
   useEffect(() => {
-    fetch("/api/health")
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json() as Promise<Health>;
-      })
-      .then(setHealth)
-      .catch((err: Error) => setError(err.message));
-  }, []);
+    window.scrollTo(0, 0);
+  }, [reach?.[1]]);
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem" }}>
-      <h1>River Rat</h1>
-      <p>Whitewater runnability outlook. Phase 0: plumbing check.</p>
-      {error && <p>API unreachable: {error}</p>}
-      {!health && !error && <p>Checking API…</p>}
-      {health && (
-        <p>
-          API: {health.status} · Database:{" "}
-          {health.database.ok
-            ? `connected (PostGIS ${health.database.postgis})`
-            : `unavailable (${health.database.error})`}
-        </p>
-      )}
+    <main>
+      <header className="top">
+        <h1>
+          <a href="#/">River Rat</a>
+        </h1>
+        <span className="muted">Will it run? Whitewater forecasts from rain and history.</span>
+      </header>
+      {reach ? <ReachPage key={reach[1]} reachId={Number(reach[1])} /> : <ReachList />}
+      <footer className="muted small">
+        Not an official forecast and not a safety tool. Check the{" "}
+        <a href="https://water.noaa.gov" target="_blank" rel="noreferrer">
+          National Weather Service
+        </a>{" "}
+        and{" "}
+        <a href="https://www.americanwhitewater.org" target="_blank" rel="noreferrer">
+          American Whitewater
+        </a>{" "}
+        before you go. Data: USGS, NOAA, American Whitewater.
+      </footer>
     </main>
   );
 }

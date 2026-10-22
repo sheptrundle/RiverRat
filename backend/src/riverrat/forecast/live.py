@@ -28,6 +28,8 @@ class Current:
     state: State  # hourly flow (cfs) and wetness at the end of the latest hour with readings
     ft: float | None  # stage in that hour, when the gauge reports it
     rain_hours: int  # hours of basin rain behind the wetness index, of API_HOURS
+    recent_start: datetime  # end of the first hour of `recent_cfs`
+    recent_cfs: np.ndarray  # hourly flow through state.at (NaN = no readings)
 
 
 def current(session: Session, gauge_id: int, now: datetime) -> Current | None:
@@ -57,6 +59,8 @@ def current(session: Session, gauge_id: int, now: datetime) -> Current | None:
         state=State(q=float(cfs[last]), api_mm=api_mm, at=at),
         ft=float(ft[last]) if np.isfinite(ft[last]) else None,
         rain_hours=int(np.isfinite(rain).sum()),
+        recent_start=hours[0].astype("datetime64[s]").item().replace(tzinfo=UTC),
+        recent_cfs=cfs[: last + 1],
     )
 
 

@@ -415,6 +415,8 @@ The OpenAPI schema generates TypeScript types (`openapi-typescript`), so the fro
 ## 11. Frontend (desktop-first)
 **Stack:** React + TypeScript + Vite (a single-page app served as static files), TanStack Query, Tailwind, and **uPlot** (fast time-series charts) or Observable Plot. MapLibre GL comes in Phase 5 for the map, with free tiles (OpenFreeMap or Protomaps).
 
+*As built (2026-10-21):* plain React, CSS variables (light and dark), and hand-drawn SVG charts (`web/src/charts.tsx`), with no other runtime dependencies yet; a hash router (`#/`, `#/reach/{id}`); and hand-written API types (`web/src/api.ts`). A charting library, TanStack Query, and generated types can come in when the Outlook grid needs them.
+
 **Outlook (home page)**
 - A rolling grid: one column per day from today through day 5 (6 max).
 - A "next N days" control (1–6), optional day chips to focus on specific days (e.g., Saturday) and sort by them, and filters for region and difficulty.
@@ -437,7 +439,8 @@ The OpenAPI schema generates TypeScript types (`openapi-typescript`), so the fro
 - A small map of the watershed.
 
 **What-if panel**
-- **Sliders:** rain total (0–4 in.), start time, and storm type (3-h burst, 12-h typical, or 36-h soaker).
+- **Sliders:** rain total (0–4 in.), start time, and storm type (3-h burst, 18-h typical, or 36-h soaker).
+- *As built (2026-10-21):* the reach page shows the current flow and band; the What-if panel with the last 48 h observed, the forecast fan over the band shading, the storm, and daylight windows; per-day cards (P(runnable), a stacked bar of the peak's band, the median peak); the rain-response curve for the selected day with the NBM range and the rain needed; and the 8 most similar storms (sparklines still to come). When AW's primary gauge is a calculated one, the page names the stand-in gauge.
 - **Outputs:**
   - the updated hydrograph fan
   - P(runnable) per day
