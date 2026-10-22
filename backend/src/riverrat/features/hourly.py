@@ -38,6 +38,19 @@ def latest_hour(now: datetime) -> datetime:
     return now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
 
 
+def readings_table(rows) -> pa.Table:
+    """A readings table with the history columns hourly_flow needs, from (ts, value,
+    qualifier) rows such as live observations."""
+    ts, values, qualifiers = zip(*rows, strict=True) if rows else ((), (), ())
+    return pa.table(
+        {
+            "ts": pa.array(ts, pa.timestamp("us", tz="UTC")),
+            "value": pa.array(values, pa.float64()),
+            "qualifier": pa.array(qualifiers, pa.string()),
+        }
+    )
+
+
 def hourly_flow(readings: pa.Table, hours: np.ndarray) -> np.ndarray:
     """Mean of the good readings in each hour (NaN for hours without any). `readings` has
     the USGS history columns (ts, value, qualifier); `hours` are consecutive hour ends.

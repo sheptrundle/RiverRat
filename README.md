@@ -24,7 +24,7 @@ docker compose up --build
 ```
 
 - Web: http://localhost:5173
-- API: http://localhost:8000/api/health (interactive docs at `/docs`)
+- API: http://localhost:8000/api/health (interactive docs at `/docs`); What-if for a reach: `/api/reaches/{id}/whatif?rain_in=1.5&start_h=12` and `/api/reaches/{id}/rain-response`
 - Postgres + PostGIS: `localhost:5432` (user, password, and database are all `riverrat`)
 
 The API container applies database migrations on startup.
@@ -71,6 +71,9 @@ uv run python -m riverrat.jobs.events extract  # past storms and responses -> da
 
 # Score the analog model on storms it never saw (library <= 2019; 2023+ is the held-out test)
 uv run python -m riverrat.jobs.hindcast analog # 2020-22 storms -> data/skill/{analog,runnable}_2020-2022.parquet
+
+# Stage ratings for reaches in feet (the worker refits daily)
+uv run python -m riverrat.jobs.ratings         # -> data/ratings/ratings.json
 ```
 
 Long backfills can run in a container so they survive closing the terminal:
@@ -86,9 +89,11 @@ The `worker` container (`docker compose up -d worker`) runs recurring jobs from 
 
 | Job | Every | Steps |
 |---|---|---|
+| `usgs-live` | 15 min | `usgs live` (the last 3 hours of 15-minute readings; prunes readings older than 60 days) |
 | `noaa-archive` | 3 h | `noaa link`, `noaa archive` |
 | `rain-recent` | 1 h | `rain recent --max-hours 48` (new Stage IV hours, plus revisions from the last 2 days) |
 | `rain-forecast` | 1 h | `rain_forecast archive` (NBM 00/06/12/18Z runs from the last 2 days not yet stored) |
+| `ratings` | 1 day | `ratings` (stage ratings for reaches in feet -> data/ratings/ratings.json) |
 
 After changing backend code, rebuild with `docker compose up -d --build worker`.
 

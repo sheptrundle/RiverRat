@@ -230,23 +230,25 @@ Owner decisions:
 - **Replay:** each analog's rise in log(1 + cfs) is stretched by the rain ratio (clipped to 0.5–2×), and capped so no replay runs off more than 80% of the rain. The hydrograph is observed until the next storm, then continues on the gauge's fitted recession curve (`models/recession.py`, also the M0 "no more rain" path).
 - **Forecasts flag `extrapolated`** when the rain exceeds every matched storm.
 
-Perfect-rain hindcast, 2020–22, library ≤ 2019, 6,924 storms at 50 gauges. CRPS is in log(1 + cfs), lower is better.
+Perfect-rain hindcast, 2020–22, library ≤ 2019, 49,582 storms at 309 gauges (2026-10-21; 18 gauges lacked flow or enough pre-2020 storms). CRPS is in log(1 + cfs), lower is better.
 
-| Model | Hourly CRPS | Peak CRPS | Peak bias, 1 in+ storms | Peaks inside 80% range |
+| Model | Hourly CRPS | Peak CRPS | Peak bias, 1 in+ storms (log) | Peaks inside 80% range |
 |---|---|---|---|---|
-| Persistence | 0.432 | 1.022 | — | 1% |
-| All storms, unweighted (no matching) | 0.276 | 0.483 | — | 78% |
-| **Analog** | **0.176** | **0.271** | **−11%** | **78%** |
+| Persistence | 0.476 | 1.031 | −1.99 | 1% |
+| All storms, unweighted (no matching) | 0.304 | 0.458 | −1.19 | 78% |
+| **Analog** | **0.182** | **0.237** | **−0.03** | **80%** |
 
-**Daily runnability** (`forecast/daily.py`): for each day from today through the last one the forecast covers, the weighted share of members in range at any hour between sunrise and sunset at the gauge (`forecast/daylight.py`, NOAA solar equations, within ~3 min of published times). Also computed: the band of the daylight peak, P(too high all day), peak percentiles, and median hours in range. Reliability on 2020–22 storms, scored on cfs reaches for the days each storm's window covers (~50,000 reach-days):
+**Daily runnability** (`forecast/daily.py`): for each day from today through the last one the forecast covers, the weighted share of members in range at any hour between sunrise and sunset at the gauge (`forecast/daylight.py`, NOAA solar equations, within ~3 min of published times). Also computed: the band of the daylight peak, P(too high all day), peak percentiles, and median hours in range. Reliability on 2020–22 storms, scored on 566 cfs reaches for the days each storm's window covers (~340,000 reach-days per model):
 
-| Forecast P(runnable) | ~2% | ~30% | ~50% | ~70% | ~95% | Brier |
+| Forecast P(runnable) | ~2% | ~30% | ~50% | ~70% | ~97% | Brier |
 |---|---|---|---|---|---|---|
-| **Analog: observed** | 2% | 29% | 51% | 70% | 93% | **0.060** |
-| No matching: observed | 7% (at 5%) | 29% | 45% | 66% | 93% | 0.092 |
-| Persistence | — | — | — | — | 91% (at 100%); 13% at 0% | 0.130 |
+| **Analog: observed** | 3% | 30% | 51% | 73% | 97% | **0.057** |
+| No matching: observed | 8% (at 5%) | 34% | 51% | 69% | 95% | 0.098 |
+| Persistence | — | — | — | — | 93% (at 100%); 18% at 0% | 0.153 |
 
-The analog model beats no-matching at every gauge (18–46%); the weakest are below dams and urban. Without the rain stretch, peaks of 1 in+ storms were 26% low. Without the cap, stretching invented floods 3× the record. Not yet handled: several storms in one scenario (needed for the Outlook from forecast rain; M2's job, or M1 composing storms) and regulated releases.
+The analog model beats no-matching at every one of the 309 gauges (median 42% lower CRPS, least 12%); the weakest are below dams and urban. Without the rain stretch, peaks of 1 in+ storms were 26% low (first 50 gauges). Without the cap, stretching invented floods 3× the record. Not yet handled: several storms in one scenario (needed for the Outlook from forecast rain; M2's job, or M1 composing storms) and regulated releases.
+
+**Live** (`api/reaches.py`, 2026-10-21): the library is the gauge's full storm history, loaded from the laptop's Parquet lake on first request and cached until the files change (`models/store.py`). The state is the latest hourly flow from the 15-minute live readings (up to 48 h old) and the antecedent index from the last 30 days of live Stage IV basin rain (`forecast/live.py`). Feet-rated reaches convert through ratings refit daily from two years of history plus live readings (`jobs/ratings.py`; 126 of 144 gauges fit).
 
 For each gauge, the displayed forecast is the best model by hindcast CRPS, or a skill-weighted blend of models. M1 stays on as the explanation engine even if M2 or M3 wins.
 
@@ -371,8 +373,8 @@ Times are stored in UTC and displayed in the reach's local time zone. Migrations
 | `GET /api/reaches/{id}/outlook` | Per-day products and drivers |
 | `GET /api/gauges/{id}/observations?since=` | The observed hydrograph |
 | `GET /api/gauges/{id}/forecast` | Our quantile fan plus the NWM and RFC series |
-| `GET /api/gauges/{id}/rain-response?day=` | The precomputed curve of P(runnable) and peak vs. rain amount |
-| `GET /api/gauges/{id}/whatif?rain_in=&start=&duration_h=` | Hydrograph quantiles, P(runnable) per day, and the nearest analog events. Computed live and cached by rounded inputs. |
+| `GET /api/reaches/{id}/whatif?rain_in=&storm=burst\|typical\|soaker&start_h=` | **Built.** For one storm: the current state, hourly p10/p50/p90 in the range's units, per-day products, the 8 most similar past storms, and the `extrapolated` flag. Computed live: ~10 ms, or 0.2–0.9 s on a gauge's first request while its library loads. |
+| `GET /api/reaches/{id}/rain-response?storm=&start_h=` | **Built.** The slider curve: per day, P(runnable), P(reach the minimum), and P(too high all day) for 0–4 in, the rain needed, and the latest NBM basin total through that day's sunset. Computed live, ~30 ms. |
 | `GET /api/gauges/{id}/skill` | Track record |
 
 The OpenAPI schema generates TypeScript types (`openapi-typescript`), so the frontend and backend can't drift apart.
@@ -513,6 +515,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-20 | Forecast rain comes from NBM's 6-hour percentile fields, read by byte range and averaged per basin (each percentile grid's basin mean stands in for the percentile of the basin mean). Seven percentiles per period instead of all 21 keep a run at ~170 MB. Checked on the 2026-10-10/11 storm: for the run 12–36 h before, observed basin rain fell inside its p10–p90 range at 80% of basins (the rest above p90), with a correlation of 0.63 against Stage IV. |
 | 2026-10-20 | Low/medium/high are our own thirds of AW's range (log for cfs, linear for feet), because AW's statuses use unpublished per-reach breakpoints. Feet-rated reaches use a per-gauge empirical rating (2-year shape plus a 30-day offset) rather than waiting for official ratings. A paddling day is sunrise to sunset at the gauge, with days labeled by the date at solar noon, which avoids a time-zone lookup. |
 | 2026-10-20 | The slider curve is one analog forecast per rain amount, smoothed only where physics says more rain can't lower it. The runnable chance is left free to fall, since a reach can blow out. Storm types come from the observed duration and peak-3-hour share of pilot storms rather than round numbers. |
+| 2026-10-21 | What-if endpoints are per reach, not per gauge, because the bands (and so every runnable number) belong to the reach. They compute live from the laptop's Parquet lake instead of a precomputed `rain_response` table; deploying to the VPS will need per-gauge library artifacts. A reach is forecast through its primary USGS gauge, or failing that any USGS gauge with a usable range, history, rating (feet), and a reading in the last 48 h; otherwise the API answers 409 with the reason. |
 | 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)

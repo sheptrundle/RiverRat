@@ -21,8 +21,12 @@ services:
     build: ./backend
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-riverrat}:${POSTGRES_PASSWORD:-riverrat}@db:5432/${POSTGRES_DB:-riverrat}
+      DATA_DIR: /data
     ports:
       - "8000:8000"
+    volumes:
+      # Each gauge's storm library and ratings (models/store.py), read-only.
+      - ./data:/data:ro
     depends_on:
       db:
         condition: service_healthy

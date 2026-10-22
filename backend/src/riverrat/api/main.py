@@ -6,9 +6,11 @@ from fastapi import Depends, FastAPI
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from riverrat.api import reaches
 from riverrat.db.session import get_engine
 
 app = FastAPI(title="River Rat API", version="0.1.0")
+app.include_router(reaches.router)
 
 
 def database_status() -> dict[str, Any]:

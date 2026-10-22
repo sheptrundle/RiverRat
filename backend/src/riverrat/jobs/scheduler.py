@@ -25,12 +25,16 @@ class Job:
 
 
 JOBS = (
+    # Live gauge readings: the forecasts' starting point. A 3-hour look-back overlaps runs.
+    Job("usgs-live", (("usgs", "live"),), timedelta(minutes=15)),
     # NWPS keeps only the latest forecasts; archive them every few hours (DESIGN.md §6.7).
     Job("noaa-archive", (("noaa", "link"), ("noaa", "archive")), timedelta(hours=3)),
     # Stage IV basin rain: new hours plus revisions; a long gap catches up 48 hours a run.
     Job("rain-recent", (("rain", "recent", "--max-hours", "48"),), timedelta(hours=1)),
     # NBM rain forecasts: each 00/06/12/18Z run once it's fully published (~4 h later).
     Job("rain-forecast", (("rain_forecast", "archive"),), timedelta(hours=1)),
+    # Stage ratings for reaches in feet, refit as live readings shift the offset.
+    Job("ratings", (("ratings",),), timedelta(days=1)),
 )
 
 

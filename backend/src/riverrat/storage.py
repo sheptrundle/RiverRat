@@ -12,3 +12,10 @@ def write_parquet(path: Path, table: pa.Table) -> None:
     tmp = path.with_suffix(".tmp")
     pq.write_table(table, tmp, compression="zstd")
     tmp.replace(path)
+
+
+def write_text(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(text)
+    tmp.replace(path)

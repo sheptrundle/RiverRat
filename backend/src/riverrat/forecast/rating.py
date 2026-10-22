@@ -60,6 +60,17 @@ class Rating:
             rating = cls(rating.log_cfs, rating.ft + offset, rating.slope_above)
         return rating
 
+    def to_dict(self) -> dict:
+        return {
+            "log_cfs": self.log_cfs.tolist(),
+            "ft": self.ft.tolist(),
+            "slope_above": self.slope_above,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Rating":
+        return cls(np.array(data["log_cfs"]), np.array(data["ft"]), float(data["slope_above"]))
+
     def to_ft(self, cfs) -> np.ndarray:
         x = np.log(np.maximum(np.asarray(cfs, float), 1e-3))
         above = np.maximum(x - self.log_cfs[-1], 0)
