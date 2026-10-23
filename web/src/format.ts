@@ -68,3 +68,11 @@ export function rainRange(q: { p10: number; p50: number; p90: number }): string 
   if (q.p90 < 0.005) return "dry";
   return `${inches(q.p50)} (${inches(q.p10)}–${inches(q.p90)})`;
 }
+
+/** Why a range looks wrong for its gauge (forecast/history.py notes). */
+export const RANGE_NOTES: Record<string, string> = {
+  above_record:
+    "This gauge almost never gets as high as this range. It may be a flood-only run, or AW's range may be meant for a different gauge.",
+  below_record:
+    "This gauge almost never gets as low as this range. AW's range may be meant for a different gauge or datum.",
+};

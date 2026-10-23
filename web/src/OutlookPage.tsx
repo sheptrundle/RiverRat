@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { Outlook, OutlookReach } from "./api";
 import { useApi } from "./api";
 import { BAND_COLORS, BandBar } from "./charts";
-import { BAND_LABELS, classLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
+import { BAND_LABELS, RANGE_NOTES, classLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
 import type { Sort } from "./tables";
 import { PAGE_SIZES, Pager, SortHeader, allStates, compareClass, matchesQuery, paged, stateCodes } from "./tables";
 
 // "best" = the highest chance over the days shown; "day:N" = day N's chance.
-type Column = "best" | "river" | "class" | "state" | `day:${number}`;
+type Column = "best" | "river" | "class" | "state" | "runs" | `day:${number}`;
 const CHANCES = [
   { label: "Any chance", min: 0 },
   { label: "≥ 10% some day", min: 0.1 },
@@ -53,6 +53,7 @@ export default function OutlookPage() {
       if (sort.column === "river") return sign * a.river.localeCompare(b.river);
       if (sort.column === "state") return sign * stateCodes(a.states).localeCompare(stateCodes(b.states));
       if (sort.column === "class") return compareClass(a.difficulty, b.difficulty, sign);
+      if (sort.column === "runs") return sign * ((a.in_range_share ?? -1) - (b.in_range_share ?? -1));
       const day = days[Number(sort.column.slice(4))];
       return sign * ((chance(a, day) ?? 0) - (chance(b, day) ?? 0));
     };
@@ -74,7 +75,7 @@ export default function OutlookPage() {
   const { pages, current, shown } = paged(matches, page, pageSize);
   const onSort = (column: Column) => {
     // chances sort highest first; names A→Z
-    const firstDescending = column === "best" || column.startsWith("day:");
+    const firstDescending = column === "best" || column === "runs" || column.startsWith("day:");
     setSort((s) => ({ column, descending: s.column === column ? !s.descending : firstDescending }));
     setPage(0);
   };
@@ -158,6 +159,12 @@ export default function OutlookPage() {
               <SortHeader column="river" label="River" sort={sort} onSort={onSort} />
               <SortHeader column="class" label="Class" sort={sort} onSort={onSort} />
               <SortHeader column="state" label="State" sort={sort} onSort={onSort} />
+              <SortHeader
+                column="runs"
+                label={<span title="Share of days in range over the last 10 years">Runs</span>}
+                sort={sort}
+                onSort={onSort}
+              />
               <th>Now</th>
               {data.days.map((day, n) => (
                 <SortHeader key={day} className="day-col" column={`day:${n}`} label={weekday(day)} sort={sort} onSort={onSort} />
@@ -170,10 +177,18 @@ export default function OutlookPage() {
               <tr key={r.id} onClick={() => (location.hash = `#/reach/${r.id}`)}>
                 <td>
                   <a href={`#/reach/${r.id}`}>{r.river}</a>
+                  {r.range_note && (
+                    <span className="range-warning" title={RANGE_NOTES[r.range_note]}>
+                      {" "}⚠
+                    </span>
+                  )}
                   <div className="muted small">{r.section}</div>
                 </td>
                 <td className="nowrap">{r.difficulty ? classLabel(r.difficulty) : ""}</td>
                 <td>{stateCodes(r.states)}</td>
+                <td className="nowrap muted" title="Share of days in range over the last 10 years">
+                  {r.in_range_share !== null ? percent(r.in_range_share) : ""}
+                </td>
                 <td className="nowrap">
                   {flow(r.now_value, r.metric)}
                   <div>

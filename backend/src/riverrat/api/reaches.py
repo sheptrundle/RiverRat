@@ -23,6 +23,7 @@ from riverrat.forecast import live, response
 from riverrat.forecast.bands import Bands
 from riverrat.forecast.daily import Day, daily
 from riverrat.forecast.daylight import sun_times
+from riverrat.forecast.history import range_history
 from riverrat.forecast.target import NoForecast, Target, target
 from riverrat.models import analog
 
@@ -100,6 +101,12 @@ class Now(BaseModel):
     rain_hours: int  # hours of live basin rain behind it, of 720
 
 
+class History(BaseModel):
+    share_in_range: float  # of days over the last 10 years
+    days: int
+    note: str | None  # "above_record" / "below_record": the range looks wrong for the gauge
+
+
 class StormInfo(BaseModel):
     rain_in: float
     type: StormType
@@ -156,6 +163,7 @@ class WhatIf(BaseModel):
     gauge: GaugeInfo
     bands: BandsInfo
     now: Now
+    history: History | None
     observed: Series  # the last 48 hours, through now.at
     storm: StormInfo
     forecast: Fan
@@ -253,6 +261,13 @@ def _quantiles(values) -> dict:
     }
 
 
+def _history(target: Target, data_dir: Path) -> History | None:
+    found = range_history(target, data_dir)
+    if found is None:
+        return None
+    return History(share_in_range=found.share_in_range, days=found.days, note=found.note)
+
+
 def _observed(target: Target) -> Series:
     values = target.to_units(target.current.recent_cfs)
     return Series(
@@ -330,6 +345,7 @@ def whatif(
         gauge=_gauge_info(target),
         bands=_bands_info(target.bands),
         now=_now(target),
+        history=_history(target, data_dir),
         observed=_observed(target),
         storm=StormInfo(
             rain_in=rain_in,

@@ -13,6 +13,7 @@ curve, forecast/response.py), so the page can move a region-wide slider instantl
 
 import argparse
 import logging
+import re
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -30,6 +31,7 @@ from riverrat.forecast import bands as band_names
 from riverrat.forecast import live, outlook, response
 from riverrat.forecast.daily import daily
 from riverrat.forecast.daylight import sun_times
+from riverrat.forecast.history import range_history
 from riverrat.forecast.response import MM_PER_IN, forecast_total
 from riverrat.forecast.target import NoForecast, Target, target
 from riverrat.models import analog
@@ -88,6 +90,9 @@ def compute(session: Session, *, data_dir: Path, now: datetime) -> OutlookStats:
         ensemble, rain = ensembles[found.gauge.id]
         row = _row(found, ensemble, rain, now)
         row.whatif = _whatif(found, whatifs[found.gauge.id], storm_start)
+        history = range_history(found, data_dir)
+        if history is not None:
+            row.in_range_share, row.range_note = round(history.share_in_range, 3), history.note
         rows.append(row)
     session.execute(delete(ReachOutlook))
     session.add_all(rows)
@@ -174,8 +179,10 @@ def _sig(value: float, digits: int = 3) -> float:
 
 
 def _reason(problem: str) -> str:
-    """The kind of problem, without the gauge number."""
-    return problem.split(" has ", 1)[-1] if problem.startswith("gauge ") else problem
+    """The kind of problem, without the gauge number or year."""
+    if problem.startswith("gauge "):
+        problem = problem.split(" ", 2)[2]
+    return re.sub(r"\b\d{4}\b", "YYYY", problem)
 
 
 def main() -> int:

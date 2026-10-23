@@ -62,6 +62,7 @@ export type WhatIf = {
   gauge: GaugeInfo;
   bands: Bands;
   now: Now;
+  history: { share_in_range: number; days: number; note: string | null } | null;
   observed: Series;
   storm: { rain_in: number; type: StormType; start_h: number; duration_h: number };
   forecast: Fan;
@@ -145,6 +146,8 @@ export type OutlookReach = {
   extrapolated: boolean;
   days: OutlookDay[];
   whatif: { day: string; p_runnable: number[] }[] | null; // per amount in Outlook.whatif_rain_in
+  in_range_share: number | null; // share of days in range over the last 10 years
+  range_note: string | null; // "above_record" / "below_record": the range looks wrong
 };
 export type Outlook = {
   computed_at: string | null;

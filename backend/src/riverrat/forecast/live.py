@@ -70,6 +70,20 @@ def current(session: Session, gauge_id: int, now: datetime) -> Current | None:
     )
 
 
+def reports_stage(session: Session, gauge_id: int, now: datetime) -> bool:
+    """Whether the gauge has a stage reading within MAX_READING_AGE."""
+    return (
+        session.scalar(
+            select(func.count()).where(
+                Observation.gauge_id == gauge_id,
+                Observation.param == "ft",
+                Observation.ts > now - MAX_READING_AGE,
+            )
+        )
+        > 0
+    )
+
+
 def _hourly(session: Session, gauge_id: int, param: str, hours: np.ndarray) -> np.ndarray:
     since = hours[0].astype("datetime64[s]").item().replace(tzinfo=UTC) - hourly.HOUR
     rows = session.execute(

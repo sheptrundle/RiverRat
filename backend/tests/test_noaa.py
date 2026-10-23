@@ -45,7 +45,7 @@ def nwm_short(reference="2026-10-18T18:00:00Z", flows=(2801.9, 2795.0)):
 
 
 def test_parse_gauge():
-    assert nwps.parse_gauge(nwps_gauge()) == nwps.NwpsGauge("BVAW2", 4552334, True)
+    assert nwps.parse_gauge(nwps_gauge()) == nwps.NwpsGauge("BVAW2", 4552334, True, "03192000")
     assert not nwps.parse_gauge(nwps_gauge(forecast="")).has_rfc_forecast
 
 
@@ -239,3 +239,19 @@ def test_archive_counts_empty_forecasts(session):
     with client_for(fake) as client:
         stats = jobs.archive(client, session)
     assert (stats.empty, stats.rfc_new, stats.nwm_new) == (2, 0, 0)
+
+
+def test_nws_locations_link_to_their_usgs_twins(session):
+    twin = add_gauge(session, "03192000")
+    add_gauge(session, "bvaw2", source="NOAA")
+    add_gauge(session, "anyw2", source="NOAA")  # no USGS gauge there
+    add_gauge(session, "jcrv2", source="NOAA")  # its USGS gauge isn't one of ours
+    fake = FakeNOAA()
+    fake.gauges["bvaw2"] = nwps_gauge(lid="BVAW2")
+    fake.gauges["anyw2"] = nwps_gauge(lid="ANYW2", usgs="")
+    fake.gauges["jcrv2"] = nwps_gauge(lid="JCRV2", usgs="02017500")
+
+    with client_for(fake) as client:
+        assert jobs.link_twins(client, session) == 1
+    links = dict(session.execute(select(Gauge.source_id, Gauge.same_as_id)).all())
+    assert links == {"03192000": None, "bvaw2": twin.id, "anyw2": None, "jcrv2": None}

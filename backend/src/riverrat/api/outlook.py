@@ -46,6 +46,8 @@ class OutlookReach(BaseModel):
     extrapolated: bool
     days: list[OutlookDay]
     whatif: list[WhatIfDay] | None  # if every basin got each of Outlook.whatif_rain_in
+    in_range_share: float | None  # share of days in range over the last 10 years
+    range_note: str | None  # "above_record" / "below_record": the range looks wrong
 
 
 class Outlook(BaseModel):
@@ -92,6 +94,8 @@ def get_outlook(session: SessionDep) -> Outlook:
             extrapolated=found.extrapolated,
             days=found.days,
             whatif=found.whatif["days"] if found.whatif else None,
+            in_range_share=found.in_range_share,
+            range_note=found.range_note,
         )
         for found, reach, site, low, high in rows
     ]

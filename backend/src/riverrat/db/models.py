@@ -76,6 +76,9 @@ class Gauge(Base):
     nwm_reach_id: Mapped[int | None] = mapped_column(BigInteger)
     has_rfc_forecast: Mapped[bool] = mapped_column(default=False, server_default="false")
     noaa_linked_at: Mapped[datetime | None]
+    # A USGS gauge at the same place (an NWS location's twin): a reach whose range is on
+    # this gauge is forecast through that one.
+    same_as_id: Mapped[int | None] = mapped_column(ForeignKey("gauge.id", ondelete="SET NULL"))
 
 
 class ReachGauge(Base):
@@ -231,3 +234,7 @@ class ReachOutlook(Base):
     # Chance of running each day if every basin got 0–3 in starting the same evening:
     # {storm_start, storm_type, rain_in: [...], days: [{day, p_runnable: [...]}]}
     whatif = mapped_column(JSONB)
+    # How often the reach has been in range (forecast/history.py), and a flag when the
+    # range looks wrong for the gauge: "above_record" or "below_record".
+    in_range_share: Mapped[float | None]
+    range_note: Mapped[str | None] = mapped_column(String(16))

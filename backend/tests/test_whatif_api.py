@@ -242,12 +242,36 @@ def test_a_stand_in_gauge_on_the_same_river_is_preferred(client, session):
     assert (gauge["site"], gauge["primary"]) == (SITE, False)
 
 
+def test_a_range_on_an_nws_location_uses_its_usgs_twin(client, session):
+    reach_id = add_reach(session)
+    link = session.query(ReachGauge).one()
+    twin = session.get(Gauge, link.gauge_id)
+    nws = Gauge(source="NOAA", source_id="synw2", name="Synthetic Creek NWS", same_as_id=twin.id)
+    session.add(nws)
+    session.flush()
+    link.gauge_id = nws.id  # AW's range is on the NWS location
+    session.commit()
+    body = client.get(f"/api/reaches/{reach_id}/whatif").json()
+    assert (body["gauge"]["site"], body["gauge"]["primary"]) == (SITE, True)
+
+
 def test_reaches_that_cant_be_forecast(client, session):
     assert client.get("/api/reaches/12345/whatif").status_code == 404
     reach_id = add_reach(session, readings=False)
     response = client.get(f"/api/reaches/{reach_id}/whatif")
     assert response.status_code == 409
     assert "no reading" in response.json()["detail"]
+
+    gauge = session.query(Gauge).one()
+    session.add(Observation(gauge_id=gauge.id, param="ft", ts=NOW, value=1.0, approved=False))
+    session.commit()
+    detail = client.get(f"/api/reaches/{reach_id}/whatif").json()["detail"]
+    assert "stage only" in detail
+
+    gauge.cfs_end = NOW - timedelta(days=400)
+    session.commit()
+    detail = client.get(f"/api/reaches/{reach_id}/whatif").json()["detail"]
+    assert detail == f"gauge {SITE} stopped reporting flow in 2025 (USGS discontinued it)"
 
 
 def test_ratings_job_fits_history_plus_live_readings(session, tmp_path):
@@ -308,6 +332,9 @@ def test_outlook_job_and_endpoint(client, session, lake):
     stats = outlook_jobs.compute(session, data_dir=lake, now=NOW)
     assert (stats.reaches, stats.gauges) == (1, 1)
     assert stats.skipped == {"the reach has no USGS gauge with a runnable range": 1}
+    assert outlook_jobs._reason("gauge 0123 stopped reporting flow in 2009 (x)") == (
+        "stopped reporting flow in YYYY (x)"
+    )
 
     body = client.get("/api/outlook").json()
     assert body["rain_issued_at"] == "2026-06-01T12:20:00Z"
@@ -331,3 +358,17 @@ def test_outlook_job_and_endpoint(client, session, lake):
     # a rerun replaces the rows rather than adding to them
     outlook_jobs.compute(session, data_dir=lake, now=NOW)
     assert len(client.get("/api/outlook").json()["reaches"]) == 1
+
+
+def test_range_history_and_ranges_that_look_wrong(client, session):
+    reach_id = add_reach(session)  # 150–400 cfs on a river that idles at 50
+    history = client.get(f"/api/reaches/{reach_id}/whatif").json()["history"]
+    assert history["days"] >= 365
+    assert 0.01 < history["share_in_range"] < 0.5
+    assert history["note"] is None
+
+    link = session.query(ReachGauge).one()
+    link.range_min, link.range_max = 1.0, 10.0  # the river never drops that low
+    session.commit()
+    history = client.get(f"/api/reaches/{reach_id}/whatif").json()["history"]
+    assert (history["share_in_range"], history["note"]) == (0.0, "below_record")

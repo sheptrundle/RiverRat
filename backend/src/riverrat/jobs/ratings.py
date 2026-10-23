@@ -18,7 +18,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from riverrat.config import get_settings
 from riverrat.db.models import Gauge, Observation, ReachGauge
@@ -45,9 +45,12 @@ def fit_all(
     session: Session, *, data_dir: Path, now: datetime | None = None, sites=None
 ) -> RatingStats:
     """Refit every USGS gauge that some reach rates in feet, replacing the ratings file."""
+    # Gauges a reach rates in feet, directly or as an NWS location's USGS twin.
+    linked = aliased(Gauge)
     query = (
         select(Gauge.id, Gauge.source_id)
-        .join(ReachGauge, ReachGauge.gauge_id == Gauge.id)
+        .join(linked, (linked.id == Gauge.id) | (linked.same_as_id == Gauge.id))
+        .join(ReachGauge, ReachGauge.gauge_id == linked.id)
         .where(Gauge.source == "USGS", ReachGauge.metric == "ft")
         .distinct()
         .order_by(Gauge.source_id)

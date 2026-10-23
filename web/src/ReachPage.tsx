@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { RainResponse, StormType, WhatIf } from "./api";
 import { useApi } from "./api";
 import { BAND_COLORS, BandBar, Hydrograph, ResponseCurve } from "./charts";
-import { BAND_LABELS, HOUR_MS, awUrl, classLabel, rangeLabel, dateLabel, dayLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
+import { BAND_LABELS, HOUR_MS, awUrl, classLabel, RANGE_NOTES, rangeLabel, dateLabel, dayLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
 
 const STORMS: { type: StormType; label: string; hint: string }[] = [
   { type: "burst", label: "Burst", hint: "3 h thunderstorm" },
@@ -75,9 +75,13 @@ export default function ReachPage({ reachId }: { reachId: number }) {
             as of {timeLabel(nowMs)}
           </span>
           <span className="muted">Range {rangeLabel(w.bands.minimum, w.bands.maximum, metric)}</span>
+          {w.history && (
+            <span className="muted">In range on {percent(w.history.share_in_range)} of days over the last 10 years</span>
+          )}
         </div>
       </header>
 
+      {w.history?.note && <p className="warning">{RANGE_NOTES[w.history.note]}</p>}
       <div className="panel">
         <h3>What if it rains?</h3>
         <div className="controls">

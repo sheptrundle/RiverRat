@@ -83,6 +83,31 @@ def link_gauges(
     return stats
 
 
+def link_twins(client: PoliteClient, session: Session) -> int:
+    """Point each NWS-location gauge (AW source "NOAA") at the USGS gauge NWPS says is at
+    the same place, when we have it. Returns how many were linked."""
+    gauges = session.execute(
+        select(Gauge.id, Gauge.source_id).where(Gauge.source == "NOAA", Gauge.same_as_id.is_(None))
+    ).all()
+    usgs = dict(
+        session.execute(select(Gauge.source_id, Gauge.id).where(Gauge.source == "USGS")).all()
+    )
+    session.rollback()
+    linked = 0
+    for gauge_id, lid in gauges:
+        try:
+            found = _nwps_gauge(client, lid)
+        except httpx2.HTTPError as exc:
+            log.warning("Looking up NWS location %s failed: %s", lid, exc)
+            continue
+        twin = usgs.get(found.usgs_id) if found and found.usgs_id else None
+        if twin is not None:
+            session.execute(update(Gauge).where(Gauge.id == gauge_id).values(same_as_id=twin))
+            session.commit()
+            linked += 1
+    return linked
+
+
 def _get_json_or_none(client: PoliteClient, url: str) -> dict | None:
     """The JSON body, or None if the service doesn't know this ID (404)."""
     try:
@@ -194,6 +219,7 @@ def main() -> int:
     ):
         if args.command == "link":
             log.info("Link: %s", link_gauges(client, session))
+            log.info("NWS locations linked to USGS twins: %d", link_twins(client, session))
         else:
             log.info("Archive: %s", archive(client, session))
     return 0

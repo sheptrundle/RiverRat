@@ -10,6 +10,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+import numpy as np
 import pyarrow.parquet as pq
 
 from riverrat.features import hourly
@@ -39,6 +40,28 @@ def _library(hourly_file, events_file, site, area_sqmi, *_mtimes) -> analog.Anal
     rows = pq.read_table(events_file, filters=[("site", "==", site)]).to_pylist()
     found = analog.AnalogLibrary(rows, hours, cfs, Recession.fit(cfs, mm), area_sqmi)
     return found if len(found) >= analog.K else None
+
+
+HISTORY_YEARS = 10
+MIN_HOURS_PER_DAY = 18
+
+
+def daily_range(data_dir: Path, site: str) -> tuple[np.ndarray, np.ndarray] | None:
+    """The gauge's daily lowest and highest hourly flow (cfs) over its last
+    HISTORY_YEARS years, for days with at least MIN_HOURS_PER_DAY hours of readings."""
+    hourly_file = event_jobs.hourly_path(data_dir, site)
+    if not hourly_file.exists():
+        return None
+    return _daily_range(hourly_file, _mtime(hourly_file))
+
+
+@lru_cache(maxsize=512)
+def _daily_range(hourly_file: Path, _mtime: float) -> tuple[np.ndarray, np.ndarray]:
+    cfs = pq.read_table(hourly_file, columns=["cfs"])["cfs"].to_numpy().astype(float)
+    days = cfs[-(len(cfs) // 24) * 24 :].reshape(-1, 24)[-365 * HISTORY_YEARS :]
+    seen = np.isfinite(days).sum(axis=1) >= MIN_HOURS_PER_DAY
+    with np.errstate(all="ignore"):
+        return np.nanmin(days[seen], axis=1), np.nanmax(days[seen], axis=1)
 
 
 def rating(data_dir: Path, site: str) -> Rating | None:

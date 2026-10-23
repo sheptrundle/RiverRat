@@ -34,6 +34,7 @@ class NwpsGauge:
     lid: str
     reach_id: int | None
     has_rfc_forecast: bool
+    usgs_id: str | None = None  # the USGS gauge at the same place, if any
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ def parse_gauge(body: dict[str, Any]) -> NwpsGauge:
         lid=body["lid"],
         reach_id=int(reach) if reach else None,
         has_rfc_forecast=bool((body.get("pedts") or {}).get("forecast")),
+        usgs_id=body.get("usgsId") or None,
     )
 
 
