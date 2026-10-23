@@ -44,7 +44,7 @@ The analog model beats the average-response baseline at **every one of the 309 g
 
 ## Built with
 
-Python (NumPy, PyArrow, SQLAlchemy, FastAPI) · PostgreSQL + PostGIS · React + TypeScript (Vite) with hand-drawn SVG charts · Docker Compose · GitHub Actions. Data: USGS Water Data API, NOAA Stage IV and AORC rain, NOAA National Blend of Models forecasts (GRIB2, read by byte range from AWS), USGS NLDI watersheds, and American Whitewater's reach catalog.
+Python (NumPy, PyArrow, SQLAlchemy, FastAPI) · PostgreSQL + PostGIS · React + TypeScript (Vite) with hand-drawn SVG charts · Docker Compose · GitHub Actions. Data: USGS Water Data API, NOAA Stage IV and AORC rain, NOAA National Blend of Models forecasts (GRIB2, read by byte range from AWS), USGS NLDI watersheds, and American Whitewater's reach catalog. AI Assisted development with Claude Code for CLI.
 
 **Status:** the data pipelines, model, What-if page, and a first Outlook (every reach's chance of running over the next 6 days from NOAA's rain forecast) are done. Next up: testing the Outlook against archived rain forecasts and calibrating it. [DESIGN.md](DESIGN.md) has the full design, the decision log, and the roadmap.
 
