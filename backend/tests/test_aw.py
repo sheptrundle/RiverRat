@@ -119,3 +119,17 @@ def test_unexpected_geometry_is_a_parse_error():
 def test_reach_not_found(html):
     with pytest.raises(aw.ReachNotFound):
         aw.parse_reach_page(html, 2378)
+
+
+@pytest.mark.parametrize(
+    ("river", "section", "expected"),
+    [
+        ("1. Cumberland", "Harlan to Wallins", ("Cumberland", "1. Harlan to Wallins")),
+        ("2) Cumberland", "3. Below", ("Cumberland", "3. Below")),  # section already numbered
+        ("Cumberland", "2. Wallins to Varilla", ("Cumberland", "2. Wallins to Varilla")),
+        ("13 Mile Creek", "Upper", ("13 Mile Creek", "Upper")),  # a number in the name
+    ],
+)
+def test_section_numbers_move_off_the_river_name(river, section, expected):
+    stub = aw.ReachStub(id=1, river=river, section=section, states=["USA-KEN"])
+    assert (stub.river, stub.section) == expected

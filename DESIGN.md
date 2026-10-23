@@ -250,6 +250,8 @@ The analog model beats no-matching at every one of the 309 gauges (median 42% lo
 
 **Live** (`api/reaches.py`, 2026-10-21): the library is the gauge's full storm history, loaded from the laptop's Parquet lake on first request and cached until the files change (`models/store.py`). The state is the latest hourly flow from the 15-minute live readings (up to 48 h old) and the antecedent index from the last 30 days of live Stage IV basin rain (`forecast/live.py`). Feet-rated reaches convert through ratings refit daily from two years of history plus live readings (`jobs/ratings.py`; 126 of 144 gauges fit).
 
+**Outlook v1** (`forecast/outlook.py`, `jobs/outlook.py`, 2026-10-23): ten equally weighted rain scenarios per basin, each taking one NBM percentile level (5%, 15%, … 95%) through every 6-hour period. A scenario's rain is split into storms with the library's own rule. The first storm is forecast from the current state; each later storm is forecast from the ensemble's median flow when it starts, and its rise above the no-storm recession is added in log flow to every path, pairing paths with replays by rank. Hours past the NBM run's last period count as dry. The worker recomputes every reach hourly (~35 s for 860 reaches through 299 gauges) into `reach_outlook`, one row per reach with the days as JSON, keeping only the latest run. Not yet calibrated: taking one level through every period overstates the spread of multi-day totals. That needs real-forecast hindcasts (§6.7 mode b) once NBM runs since 2020 are backfilled.
+
 For each gauge, the displayed forecast is the best model by hindcast CRPS, or a skill-weighted blend of models. M1 stays on as the explanation engine even if M2 or M3 wins.
 
 ### 6.5 Feature catalog
@@ -368,7 +370,7 @@ Times are stored in UTC and displayed in the reach's local time zone. Migrations
 ## 9. API (FastAPI; read-only for now)
 | Endpoint | Returns |
 |---|---|
-| `GET /api/outlook?horizon=1..6&days=YYYY-MM-DD,…&state=&difficulty=` | The Outlook: per-day products for the next `horizon` days (default 6, max `OUTLOOK_MAX_DAYS`). Reaches are ranked by the best `p_runnable` over the selected days (all days if none are selected), with band probabilities and rain needed vs. forecast. |
+| `GET /api/outlook` | **Built (v1):** every forecast reach with its current flow and band and, per day, P(runnable), the peak's band distribution, P(too high all day), peak percentiles, and NBM rain through sunset. Filtering, sorting, and day selection happen in the browser (~90 KB gzipped). *Original plan:* `?horizon=1..6&days=YYYY-MM-DD,…&state=&difficulty=`. The Outlook: per-day products for the next `horizon` days (default 6, max `OUTLOOK_MAX_DAYS`). Reaches are ranked by the best `p_runnable` over the selected days (all days if none are selected), with band probabilities and rain needed vs. forecast. |
 | `GET /api/reaches?state=&q=&bbox=` · `GET /api/reaches/{id}` | Reach list and detail: gauges, bands, AW link |
 | `GET /api/reaches/{id}/outlook` | Per-day products and drivers |
 | `GET /api/gauges/{id}/observations?since=` | The observed hydrograph |
@@ -519,6 +521,7 @@ Phase 0 deletes the IntelliJ Java/Gradle skeleton (`build.gradle`, `settings.gra
 | 2026-10-20 | Low/medium/high are our own thirds of AW's range (log for cfs, linear for feet), because AW's statuses use unpublished per-reach breakpoints. Feet-rated reaches use a per-gauge empirical rating (2-year shape plus a 30-day offset) rather than waiting for official ratings. A paddling day is sunrise to sunset at the gauge, with days labeled by the date at solar noon, which avoids a time-zone lookup. |
 | 2026-10-20 | The slider curve is one analog forecast per rain amount, smoothed only where physics says more rain can't lower it. The runnable chance is left free to fall, since a reach can blow out. Storm types come from the observed duration and peak-3-hour share of pilot storms rather than round numbers. |
 | 2026-10-21 | What-if endpoints are per reach, not per gauge, because the bands (and so every runnable number) belong to the reach. They compute live from the laptop's Parquet lake instead of a precomputed `rain_response` table; deploying to the VPS will need per-gauge library artifacts. A reach is forecast through its primary USGS gauge, or failing that any USGS gauge with a usable range, history, rating (feet), and a reading in the last 48 h; otherwise the API answers 409 with the reason. |
+| 2026-10-23 | The Outlook keeps only the latest run per reach; skill comes from hindcasts, not from archived live Outlooks. Rain scenarios are NBM percentile levels held through every period (no GEFS yet), and storms after the first add their rise in log flow on top of the paths so far. The home page is now the Outlook; the full catalog moved to `#/reaches`. |
 | 2026-10-18 | AW scraping is facts-only (names, class, length, gradient, geometry, gauge links, flow ranges, next release). No descriptions, photos, reports, or alerts; raw HTML is not stored. |
 
 ### Open questions (resolve in Phase 1 spikes)

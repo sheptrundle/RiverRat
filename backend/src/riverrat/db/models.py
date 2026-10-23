@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from geoalchemy2 import Geometry
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -206,3 +206,25 @@ class RainForecastRun(Base):
     source: Mapped[str] = mapped_column(String(16), primary_key=True)
     issued_at: Mapped[datetime] = mapped_column(primary_key=True)
     fetched_at: Mapped[datetime]
+
+
+class ReachOutlook(Base):
+    """The latest Outlook for a reach (DESIGN.md §6.3), replaced on every run. `days` holds
+    each day's products: p_runnable, peak_bands, p_too_high_all_day, peak (p10/p50/p90),
+    hours_in_range, and the forecast basin rain through that day's sunset (inches)."""
+
+    __tablename__ = "reach_outlook"
+
+    reach_id: Mapped[int] = mapped_column(
+        ForeignKey("reach.id", ondelete="CASCADE"), primary_key=True
+    )
+    gauge_id: Mapped[int] = mapped_column(ForeignKey("gauge.id", ondelete="CASCADE"))
+    primary: Mapped[bool]  # False: a stand-in for AW's primary gauge
+    computed_at: Mapped[datetime]
+    as_of: Mapped[datetime]  # the reading the forecast starts from
+    rain_issued_at: Mapped[datetime | None]  # the NBM run; None: no forecast, dry assumed
+    metric: Mapped[str] = mapped_column(String(8))
+    now_value: Mapped[float]
+    now_band: Mapped[str] = mapped_column(String(16))
+    extrapolated: Mapped[bool]
+    days = mapped_column(JSONB, nullable=False)

@@ -15,7 +15,7 @@ from riverrat.features import events, hourly
 from riverrat.jobs.rain import STAGE4
 from riverrat.jobs.rain_forecast import NBM
 from riverrat.models.analog import State
-from riverrat.sources.nbm import PERIOD_H
+from riverrat.sources.nbm import PERCENTILES, PERIOD_H
 
 # Forecasts start from the latest reading up to this old (a laptop may have slept); the
 # response says how old it is.
@@ -78,6 +78,7 @@ def _hourly(session: Session, gauge_id: int, param: str, hours: np.ndarray) -> n
 class RainOutlook:
     issued_at: datetime
     periods: list[tuple[datetime, datetime, float, float, float]]  # start, end, p10, p50, p90 mm
+    percentiles: np.ndarray  # periods × PERCENTILES, mm
 
 
 def rain_outlook(session: Session, gauge_id: int, now: datetime) -> RainOutlook | None:
@@ -87,8 +88,9 @@ def rain_outlook(session: Session, gauge_id: int, now: datetime) -> RainOutlook 
     )
     if issued is None:
         return None
+    columns = [getattr(RainForecast, f"p{p:02d}") for p in PERCENTILES]
     rows = session.execute(
-        select(RainForecast.valid_end, RainForecast.p10, RainForecast.p50, RainForecast.p90)
+        select(RainForecast.valid_end, *columns)
         .where(
             RainForecast.gauge_id == gauge_id,
             RainForecast.source == NBM,
@@ -97,9 +99,13 @@ def rain_outlook(session: Session, gauge_id: int, now: datetime) -> RainOutlook 
         )
         .order_by(RainForecast.valid_end)
     ).all()
+    rows = [row for row in rows if None not in row]
+    if not rows:
+        return None
+    values = np.array([row[1:] for row in rows], float)
+    p10, p50, p90 = (PERCENTILES.index(p) for p in (10, 50, 90))
     periods = [
-        (end - timedelta(hours=PERIOD_H), end, p10, p50, p90)
-        for end, p10, p50, p90 in rows
-        if None not in (p10, p50, p90)
+        (row[0] - timedelta(hours=PERIOD_H), row[0], v[p10], v[p50], v[p90])
+        for row, v in zip(rows, values, strict=True)
     ]
-    return RainOutlook(issued, periods) if periods else None
+    return RainOutlook(issued, periods, values)

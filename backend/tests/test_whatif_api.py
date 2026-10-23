@@ -82,6 +82,32 @@ def add_reach(session, metric="cfs", low=150.0, high=400.0, readings=True) -> in
     return reach.id
 
 
+RAIN_PERCENTILES = {
+    "p05": 0.0,
+    "p10": 0.0,
+    "p25": 1.0,
+    "p50": 2.0,
+    "p75": 4.0,
+    "p90": 6.0,
+    "p95": 8.0,
+}
+
+
+def add_rain_forecast(session, gauge_id, issued, periods, scale=1.0):
+    """An NBM run of `periods` 6-hour totals (mm), each RAIN_PERCENTILES × `scale`."""
+    session.add(RainForecastRun(source="nbm", issued_at=issued, fetched_at=issued))
+    for n in range(1, periods + 1):
+        session.add(
+            RainForecast(
+                gauge_id=gauge_id,
+                source="nbm",
+                issued_at=issued,
+                valid_end=issued + timedelta(hours=6 * n),
+                **{k: v * scale for k, v in RAIN_PERCENTILES.items()},
+            )
+        )
+
+
 @pytest.fixture
 def client(session, lake):
     app.dependency_overrides[reaches.get_session] = lambda: session
@@ -145,20 +171,7 @@ def test_rain_response_marks_the_forecast_range(client, session):
     reach_id = add_reach(session)
     gauge_id = session.query(Gauge.id).scalar()
     issued = datetime(2026, 6, 1, 6, tzinfo=UTC)
-    session.add(RainForecastRun(source="nbm", issued_at=issued, fetched_at=issued))
-    for n in range(1, 17):  # 4 days of 6-hour periods: 2 mm median each
-        end = issued + timedelta(hours=6 * n)
-        session.add(
-            RainForecast(
-                gauge_id=gauge_id,
-                source="nbm",
-                issued_at=issued,
-                valid_end=end,
-                p10=0.0,
-                p50=2.0,
-                p90=6.0,
-            )
-        )
+    add_rain_forecast(session, gauge_id, issued, periods=16)  # 4 days: 2 mm median each
     session.commit()
 
     body = client.get(f"/api/reaches/{reach_id}/rain-response").json()
@@ -276,3 +289,38 @@ def test_ratings_job_fits_history_plus_live_readings(session, tmp_path):
     saved = json.loads(rating_jobs.ratings_path(tmp_path).read_text())
     assert Rating.from_dict(saved[SITE]).to_ft(100.0) == pytest.approx(np.log(100) - 1.6, abs=0.05)
     assert saved[SITE]["fitted_at"] == now.isoformat()
+
+
+# --- the Outlook ---------------------------------------------------------------------
+
+
+def test_outlook_job_and_endpoint(client, session, lake):
+    from riverrat.jobs import outlook as outlook_jobs
+
+    reach_id = add_reach(session)
+    unforecastable = Reach(river="Dry Fork", section="Nowhere", states=["USA-WVR"])
+    session.add(unforecastable)
+    gauge_id = session.query(Gauge.id).scalar()
+    add_rain_forecast(session, gauge_id, NOW - timedelta(hours=2), periods=24, scale=5.0)
+    session.commit()
+
+    assert client.get("/api/outlook").json()["computed_at"] is None
+    stats = outlook_jobs.compute(session, data_dir=lake, now=NOW)
+    assert (stats.reaches, stats.gauges) == (1, 1)
+    assert stats.skipped == {"the reach has no USGS gauge with a runnable range": 1}
+
+    body = client.get("/api/outlook").json()
+    assert body["rain_issued_at"] == "2026-06-01T12:20:00Z"
+    assert body["days"][0] == "2026-06-01" and len(body["days"]) == 6
+    (reach,) = body["reaches"]
+    assert (reach["id"], reach["gauge_site"], reach["now_band"]) == (reach_id, SITE, "too_low")
+    days = reach["days"]
+    # 10 mm median every 6 hours: by tomorrow the river is up past the range's minimum
+    assert days[0]["rain_in"]["p50"] > 0
+    assert days[1]["peak"]["p50"] > 150
+    assert days[1]["peak_bands"]["too_low"] < 0.5
+    assert days[2]["rain_in"]["p50"] > days[1]["rain_in"]["p50"]
+
+    # a rerun replaces the rows rather than adding to them
+    outlook_jobs.compute(session, data_dir=lake, now=NOW)
+    assert len(client.get("/api/outlook").json()["reaches"]) == 1

@@ -25,7 +25,7 @@ export default function ReachPage({ reachId }: { reachId: number }) {
     return (
       <section>
         <p>
-          <a href="#/">← All reaches</a>
+          <a href="#/">← Outlook</a>
         </p>
         <p className="error">No forecast for this reach: {whatif.error}</p>
       </section>
@@ -44,7 +44,7 @@ export default function ReachPage({ reachId }: { reachId: number }) {
   return (
     <section className={whatif.loading ? "reach loading" : "reach"}>
       <p>
-        <a href="#/">← All reaches</a>
+        <a href="#/">← Outlook</a>
       </p>
       <header className="reach-header">
         <div>

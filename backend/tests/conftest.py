@@ -46,7 +46,7 @@ def db_engine():
 def session(db_engine):
     tables = (
         "reach, gauge, reach_gauge, observation, noaa_forecast, basin, basin_rain, rain_hour, "
-        "rain_forecast, rain_forecast_run"
+        "rain_forecast, rain_forecast_run, reach_outlook"
     )
     with db_engine.begin() as conn:
         conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))

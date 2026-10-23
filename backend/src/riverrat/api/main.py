@@ -3,14 +3,17 @@
 from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from riverrat.api import reaches
+from riverrat.api import outlook, reaches
 from riverrat.db.session import get_engine
 
 app = FastAPI(title="River Rat API", version="0.1.0")
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(reaches.router)
+app.include_router(outlook.router)
 
 
 def database_status() -> dict[str, Any]:

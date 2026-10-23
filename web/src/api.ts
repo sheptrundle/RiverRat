@@ -117,3 +117,37 @@ export function useApi<T>(url: string | null, delayMs = 0): Fetched<T> {
   }, [url, delayMs]);
   return state;
 }
+
+export type OutlookDay = {
+  day: string;
+  p_runnable: number;
+  peak_bands: Record<BandName, number>;
+  p_too_high_all_day: number;
+  peak: Quantiles;
+  hours_in_range: number;
+  rain_in: Quantiles | null; // NBM basin rain from now through this day's sunset
+};
+export type OutlookReach = {
+  id: number;
+  aw_id: number | null;
+  river: string;
+  section: string;
+  difficulty: string | null;
+  states: string[];
+  gauge_site: string;
+  primary: boolean;
+  metric: "cfs" | "ft";
+  range_min: number | null;
+  range_max: number | null;
+  now_value: number;
+  now_band: BandName;
+  as_of: string;
+  extrapolated: boolean;
+  days: OutlookDay[];
+};
+export type Outlook = {
+  computed_at: string | null;
+  rain_issued_at: string | null;
+  days: string[];
+  reaches: OutlookReach[];
+};

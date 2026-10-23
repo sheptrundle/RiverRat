@@ -8,6 +8,7 @@
 
 ## What it does
 
+- **Outlook.** The home page ranks every forecast reach by its chance of running on each of the next 6 days, from NOAA's probabilistic rain forecast. Sort by any day, class, state, or river.
 - **What-if slider.** Pick a rain amount, a storm type (3-hour thunderstorm, typical 18-hour storm, or 36-hour soaker), and when it starts. See the river's predicted hydrograph, the chance of running each day, and the past storms behind the forecast.
 - **Rain needed.** For each day, the least rain that gives an even chance of reaching the runnable range, drawn against NOAA's forecast basin rain.
 - **Honest uncertainty.** Every forecast is a weighted set of possible futures, so it shows a range and a probability rather than one line.
@@ -45,7 +46,7 @@ The analog model beats the average-response baseline at **every one of the 309 g
 
 Python (NumPy, PyArrow, SQLAlchemy, FastAPI) · PostgreSQL + PostGIS · React + TypeScript (Vite) with hand-drawn SVG charts · Docker Compose · GitHub Actions. Data: USGS Water Data API, NOAA Stage IV and AORC rain, NOAA National Blend of Models forecasts (GRIB2, read by byte range from AWS), USGS NLDI watersheds, and American Whitewater's reach catalog.
 
-**Status:** the data pipelines, model, What-if API, and reach page are done. Next up is the Outlook, a home page that ranks every reach by its chance of running over the next 6 days using NOAA's rain forecast. [DESIGN.md](DESIGN.md) has the full design, the decision log, and the roadmap.
+**Status:** the data pipelines, model, What-if page, and a first Outlook (every reach's chance of running over the next 6 days from NOAA's rain forecast) are done. Next up: testing the Outlook against archived rain forecasts and calibrating it. [DESIGN.md](DESIGN.md) has the full design, the decision log, and the roadmap.
 
 ## Layout
 
@@ -136,6 +137,7 @@ The `worker` container (`docker compose up -d worker`) runs recurring jobs from 
 | `noaa-archive` | 3 h | `noaa link`, `noaa archive` |
 | `rain-recent` | 1 h | `rain recent --max-hours 48` (new Stage IV hours, plus revisions from the last 2 days) |
 | `rain-forecast` | 1 h | `rain_forecast archive` (NBM 00/06/12/18Z runs from the last 2 days not yet stored) |
+| `outlook` | 1 h | `outlook` (every reach's 6-day chances from the latest flows and rain forecast -> Postgres reach_outlook) |
 | `ratings` | 1 day | `ratings` (stage ratings for reaches in feet -> data/ratings/ratings.json) |
 
 After changing backend code, rebuild with `docker compose up -d --build worker`.

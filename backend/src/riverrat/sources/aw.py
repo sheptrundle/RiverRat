@@ -12,7 +12,7 @@ from collections.abc import Callable, Iterator
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
 BASE_URL = "https://www.americanwhitewater.org"
 INDEX_URL = f"{BASE_URL}/content/River/view/river-index"
@@ -83,6 +83,11 @@ def parse_difficulty(raw: str | None) -> Difficulty | None:
 # --- Models --------------------------------------------------------------------------
 
 
+# A few AW entries put the section number on the river ("1. Cumberland" / "Harlan to
+# Wallins") where their neighbors have "Cumberland" / "2. Wallins to Varilla".
+_NUMBERED_RIVER = re.compile(r"^\s*(\d+(?:\.\d+)?[.)])\s+(\S.*)$")
+
+
 class ReachStub(BaseModel):
     """One entry in AW's river index."""
 
@@ -92,6 +97,16 @@ class ReachStub(BaseModel):
     altname: str = ""
     difficulty: str | None = None
     states: list[str]
+
+    @model_validator(mode="after")
+    def _number_belongs_to_the_section(self) -> "ReachStub":
+        match = _NUMBERED_RIVER.match(self.river)
+        if match:
+            number, river = match.groups()
+            self.river = river.strip()
+            if not self.section[:1].isdigit():
+                self.section = f"{number} {self.section}".strip()
+        return self
 
 
 class FlowRange(BaseModel):

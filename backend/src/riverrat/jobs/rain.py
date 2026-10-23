@@ -204,11 +204,16 @@ def update_recent(
     now: datetime | None = None,
     max_hours: int | None = None,
     refresh: bool = False,
+    sites: list[str] | None = None,
 ) -> RecentStats:
-    """Basin rain for every hour ending after `start`, newest first."""
+    """Basin rain for every hour ending after `start`, newest first. With `sites`, every
+    hour is recomputed for just those basins (to fill in basins added later)."""
     stats = RecentStats()
     now = now or datetime.now(UTC)
     basins = basin_rows(session)
+    if sites:
+        basins = [b for b in basins if b[1] in sites]
+        refresh = True
     seen = dict(
         session.execute(
             select(RainHour.ts, RainHour.file_modified).where(
@@ -329,6 +334,9 @@ def main() -> int:
     recent = sub.add_parser("recent", help="Hourly Stage IV basin rain since AORC ends")
     recent.add_argument("--max-hours", type=int, help="Process at most this many hours")
     recent.add_argument("--refresh", action="store_true", help="Recompute every hour")
+    recent.add_argument(
+        "--gauge", action="append", help="Recompute every hour for only this basin (repeatable)"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -346,6 +354,7 @@ def main() -> int:
                 start=settings.live_rain_start,
                 max_hours=args.max_hours,
                 refresh=args.refresh,
+                sites=args.gauge,
             )
             log.info("Recent rain: %s", stats)
         return 0

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import OutlookPage from "./OutlookPage";
 import ReachList from "./ReachList";
 import ReachPage from "./ReachPage";
 
@@ -13,7 +14,8 @@ function useHash(): string {
 }
 
 export default function App() {
-  const reach = useHash().match(/^#\/reach\/(\d+)/);
+  const hash = useHash();
+  const reach = hash.match(/^#\/reach\/(\d+)/);
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [reach?.[1]]);
@@ -26,7 +28,13 @@ export default function App() {
         </h1>
         <span className="muted">Will it run? Whitewater forecasts from rain and history.</span>
       </header>
-      {reach ? <ReachPage key={reach[1]} reachId={Number(reach[1])} /> : <ReachList />}
+      {reach ? (
+        <ReachPage key={reach[1]} reachId={Number(reach[1])} />
+      ) : hash.startsWith("#/reaches") ? (
+        <ReachList />
+      ) : (
+        <OutlookPage />
+      )}
       <footer className="muted small">
         Not an official forecast and not a safety tool. Check the{" "}
         <a href="https://water.noaa.gov" target="_blank" rel="noreferrer">

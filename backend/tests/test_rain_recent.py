@@ -167,3 +167,15 @@ def test_a_file_for_the_wrong_hour_is_rejected(session, basins):
     stats = run(fake, session, start=LATEST)
     assert (stats.hours, stats.failed) == (0, 1)
     assert session.scalar(select(func.count()).select_from(RainHour)) == 0
+
+
+def test_a_basin_added_later_is_filled_in_for_every_hour(session, basins):
+    fake = FakeStage4()
+    serve(fake, hours_back(3))
+    run(fake, session, start=LATEST - timedelta(hours=2))
+    late = add_basin(session, "D", cells_polygon((1, 3), (1, 4)))
+    assert rain(session, late) == {}
+
+    stats = run(fake, session, start=LATEST - timedelta(hours=2), sites=["D"])
+    assert stats.hours == 3
+    assert rain(session, late) == rain(session, basins["block"])

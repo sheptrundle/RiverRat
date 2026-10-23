@@ -33,6 +33,8 @@ JOBS = (
     Job("rain-recent", (("rain", "recent", "--max-hours", "48"),), timedelta(hours=1)),
     # NBM rain forecasts: each 00/06/12/18Z run once it's fully published (~4 h later).
     Job("rain-forecast", (("rain_forecast", "archive"),), timedelta(hours=1)),
+    # Every reach's 6-day chances from the latest flows and rain forecast (~1 min).
+    Job("outlook", (("outlook",),), timedelta(hours=1)),
     # Stage ratings for reaches in feet, refit as live readings shift the offset.
     Job("ratings", (("ratings",),), timedelta(days=1)),
 )
