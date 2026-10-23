@@ -1,6 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
-from riverrat.jobs.scheduler import Job, run_forever
+import pytest
+
+from riverrat.jobs.scheduler import JOBS, Job, run_forever, select_jobs
 
 
 class FakeClock:
@@ -54,3 +56,11 @@ def test_a_failing_step_does_not_stop_the_job_or_scheduler():
     job = Job("noaa-archive", (("noaa", "link"), ("noaa", "archive")), timedelta(hours=3))
     run_forever((job,), run=run, now=clock, sleep=clock.sleep, iterations=2)
     assert ran == [("noaa", "link"), ("noaa", "archive")] * 2
+
+
+def test_jobs_can_be_chosen_by_name():
+    names = [job.name for job in select_jobs(" usgs-live, outlook ")]
+    assert names == ["usgs-live", "outlook"]
+    assert select_jobs("") == JOBS
+    with pytest.raises(SystemExit):
+        select_jobs("usgs-live,nope")

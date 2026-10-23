@@ -1,0 +1,77 @@
+# The public site on one server (infra/DEPLOY.md):
+#
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# Caddy is the only service reachable from outside. The worker runs only the live jobs;
+# training data (data/hourly, data/events, data/ratings) comes from the laptop in the
+# deploy bundle (infra/bundle.sh) and is mounted read-only.
+name: riverrat-prod
+
+services:
+  db:
+    image: imresamu/postgis:18-3.6-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-riverrat}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-riverrat}
+    volumes:
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && uvicorn riverrat.api.main:app --host 0.0.0.0 --port 8000 --workers 2 --proxy-headers
+    environment: &backend-env
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-riverrat}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-riverrat}
+      DATA_DIR: /data
+      USGS_API_KEY: ${USGS_API_KEY:-}
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: ./backend
+    command: ["python", "-m", "riverrat.jobs.scheduler"]
+    environment:
+      <<: *backend-env
+      # Ratings need the 20-year history, which stays on the laptop; they come in the bundle.
+      RIVERRAT_JOBS: usgs-live,noaa-archive,rain-recent,rain-forecast,outlook
+    volumes:
+      - ./data:/data:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      api:
+        condition: service_started  # the api container applies migrations
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

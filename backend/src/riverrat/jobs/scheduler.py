@@ -1,12 +1,14 @@
 """Run River Rat's recurring jobs (DESIGN.md §7). This is the `worker` container's command.
 
     uv run python -m riverrat.jobs.scheduler
+    RIVERRAT_JOBS=usgs-live,outlook uv run python -m riverrat.jobs.scheduler   # a subset
 
 Each job runs at startup and then every `every`. Steps run as subprocesses so one
 crashing job can't take the scheduler down, and each step's log goes to stdout.
 """
 
 import logging
+import os
 import subprocess
 import sys
 import time
@@ -70,9 +72,23 @@ def run_forever(
         sleep(max(1.0, (min(next_run.values()) - now()).total_seconds()))
 
 
+def select_jobs(names: str | None, jobs: tuple[Job, ...] = JOBS) -> tuple[Job, ...]:
+    """The jobs named in a comma-separated list (all of them when empty). The server runs
+    only the live jobs; ratings need the history that stays on the laptop."""
+    if not names:
+        return jobs
+    wanted = {name.strip() for name in names.split(",") if name.strip()}
+    unknown = wanted - {job.name for job in jobs}
+    if unknown:
+        raise SystemExit(f"unknown jobs: {', '.join(sorted(unknown))}")
+    return tuple(job for job in jobs if job.name in wanted)
+
+
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    run_forever()
+    jobs = select_jobs(os.environ.get("RIVERRAT_JOBS"))
+    log.info("Jobs: %s", ", ".join(job.name for job in jobs))
+    run_forever(jobs)
     return 0
 
 

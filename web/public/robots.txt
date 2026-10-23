@@ -1,0 +1,3 @@
+# Not indexed yet: see web/Caddyfile (X-Robots-Tag) to open it up.
+User-agent: *
+Disallow: /

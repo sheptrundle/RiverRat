@@ -29,3 +29,7 @@ web/dist/
 
 # iCloud-excluded folders (see README)
 *.nosync
+
+# Deploy bundles (infra/bundle.sh) hold the database and model data
+/deploy-bundle/
+/deploy/

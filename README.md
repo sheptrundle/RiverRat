@@ -150,6 +150,10 @@ pnpm install
 pnpm dev      # proxies /api to localhost:8000
 ```
 
+## Deploying
+
+[infra/DEPLOY.md](infra/DEPLOY.md) covers running the public site on one server (Oracle Cloud's free tier, or any Docker host): `docker-compose.prod.yml` plus a bundle of the database and model data from `infra/bundle.sh`.
+
 ## Data and attribution
 
 River Rat uses river information from [American Whitewater](https://www.americanwhitewater.org/), gauge data from the [USGS](https://waterdata.usgs.gov/), and forecasts from [NOAA](https://water.noaa.gov/). Scraped or downloaded data is never committed to this repository.
