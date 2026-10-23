@@ -19,6 +19,7 @@ import numpy as np
 from riverrat.forecast.bands import Bands
 from riverrat.forecast.daily import daily
 from riverrat.models import analog
+from riverrat.models.recession import WET_MM
 
 MM_PER_IN = 25.4
 RAIN_IN = tuple(np.round(np.arange(0, 4.001, 0.25), 2))
@@ -70,13 +71,18 @@ def storm(rain_in: float, storm_type: str, start_h: int) -> analog.Storm:
 
 
 def no_rain(library: analog.AnalogLibrary, state: analog.State) -> analog.Forecast:
-    """The "no more rain" path: the gauge's recession, as a one-member forecast."""
+    """The "no more rain" forecast: equally weighted paths from the gauge's dry spells
+    (models/recession.py), or its median recession curve without enough of them."""
     hours = analog.HORIZON_H + 1
-    if library.recession is not None:
-        path = library.recession.project(state.q, hours)
+    recession = library.recession
+    if recession is None:
+        paths = np.full((1, hours), state.q)
+    elif recession.dry is None:
+        paths = recession.project(state.q, hours)[None]
     else:
-        path = np.full(hours, state.q)
-    return analog.Forecast(state.at, path[None], np.ones(1), [], False)
+        wet = (state.rain_72h_mm or 0.0) >= WET_MM
+        paths = recession.dry.paths(state.q, hours, wet)
+    return analog.Forecast(state.at, paths, np.full(len(paths), 1 / len(paths)), [], False)
 
 
 def forecasts(

@@ -7,7 +7,7 @@ from river_fake import BASE, event_rows, synthetic_river
 from riverrat.forecast import response
 from riverrat.forecast.bands import Bands
 from riverrat.models import analog
-from riverrat.models.recession import Recession
+from riverrat.models.recession import SPREAD_LEVELS, Recession
 
 LAT, LON = 38.06, -81.08
 NOW = datetime(2026, 6, 1, 14, tzinfo=UTC)  # 10 am EDT
@@ -60,9 +60,34 @@ def test_curve_rises_with_rain_and_blows_out(library):
 def test_no_rain_follows_the_recession(library):
     state = analog.State(q=500.0, api_mm=10.0, at=NOW)
     forecast = response.no_rain(library, state)
-    assert forecast.members.shape == (1, analog.HORIZON_H + 1)
-    assert forecast.members[0, 0] == pytest.approx(500.0)
-    assert np.all(np.diff(forecast.members[0]) <= 0)
+    assert forecast.weights.sum() == pytest.approx(1)
+    np.testing.assert_allclose(forecast.members[:, 0], 500.0)
+    assert np.all(forecast.members[:, -1] < 500.0)
+
+
+def test_dry_spells_carry_the_observed_spread():
+    """A river whose recession rate varies from spell to spell, with long dry spells
+    between storms: the dry-spell paths should bracket what it does."""
+    rng = np.random.default_rng(3)
+    n = 24 * 365 * 6
+    mm, cfs = np.zeros(n), np.empty(n)
+    q, rate = 1000.0, 0.01
+    for i in range(n):
+        if i % (24 * 12) == 0:  # a storm every 12 days
+            mm[i : i + 6] = 5.0
+            q, rate = 1000.0, rng.uniform(0.004, 0.016)  # this spell's hourly decay
+        q = 50 + (q - 50) * (1 - rate)
+        cfs[i] = q
+    dry = Recession.fit(cfs, mm).dry
+    assert dry is not None
+    paths = dry.paths(600.0, 145, wet=False)
+    assert paths.shape == (len(SPREAD_LEVELS), 145)
+    np.testing.assert_allclose(paths[:, 0], 600.0)
+    day3 = paths[:, 72]
+    assert np.all(np.diff(day3) <= 0)  # slowest fall first
+    # from 600 cfs (550 above base), three days at the slowest and fastest decays
+    slowest, fastest = 50 + 550 * (1 - 0.004) ** 72, 50 + 550 * (1 - 0.016) ** 72
+    assert fastest * 0.9 < day3[-1] < day3[0] < slowest * 1.1
 
 
 def test_rain_needed():

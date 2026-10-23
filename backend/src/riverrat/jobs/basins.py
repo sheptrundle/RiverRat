@@ -28,11 +28,15 @@ log = logging.getLogger(__name__)
 SQ_METERS_PER_SQ_MILE = 2_589_988.11
 # Flag basins whose area differs from the published drainage area by more than this.
 AREA_TOLERANCE = 0.10
+# A basin found from the gauge's location instead (NLDI doesn't index every gauge) is
+# kept only within this of the published area: a point can snap to a side stream.
+POSITION_TOLERANCE = 0.25
 
 
 @dataclass
 class BasinStats:
     fetched: int = 0
+    by_position: int = 0  # of fetched: from the gauge's location
     missing: int = 0
     failed: int = 0
     mismatched: int = 0
@@ -40,13 +44,19 @@ class BasinStats:
 
 def sync_basins(client: PoliteClient, session: Session, *, refresh: bool = False) -> BasinStats:
     stats = BasinStats()
-    query = select(Gauge.id, Gauge.source_id).where(Gauge.source == "USGS")
+    query = select(
+        Gauge.id,
+        Gauge.source_id,
+        func.ST_X(Gauge.geom),
+        func.ST_Y(Gauge.geom),
+        Gauge.drainage_area_sqmi,
+    ).where(Gauge.source == "USGS")
     if not refresh:
         query = query.where(~select(Basin.gauge_id).where(Basin.gauge_id == Gauge.id).exists())
     gauges = session.execute(query.order_by(Gauge.source_id)).all()
     session.rollback()  # no transaction open during the network calls below
 
-    for gauge_id, number in gauges:
+    for gauge_id, number, lon, lat, drainage in gauges:
         try:
             geometry = nldi.parse_basin(client.get(nldi.basin_url(number)).json())
         except httpx2.HTTPStatusError as exc:
@@ -59,6 +69,12 @@ def sync_basins(client: PoliteClient, session: Session, *, refresh: bool = False
             stats.failed += 1
             log.warning("Basin for gauge %s failed: %s", number, exc)
             continue
+        if geometry is None and lon is not None and drainage:
+            try:
+                geometry = _basin_by_position(client, session, number, lon, lat, drainage)
+            except httpx2.HTTPError as exc:
+                log.warning("Basin by position for gauge %s failed: %s", number, exc)
+            stats.by_position += geometry is not None
         if geometry is None:
             stats.missing += 1
             log.warning("NLDI has no basin for gauge %s", number)
@@ -72,17 +88,44 @@ def sync_basins(client: PoliteClient, session: Session, *, refresh: bool = False
     return stats
 
 
-def _store(session: Session, gauge_id: int, geometry: dict) -> None:
+def _basin_by_position(client, session, number, lon, lat, drainage) -> dict | None:
+    comid = nldi.parse_comid(client.get(nldi.position_url(lon, lat)).json())
+    if comid is None:
+        return None
+    geometry = nldi.parse_basin(client.get(nldi.comid_basin_url(comid)).json())
+    if geometry is None:
+        return None
+    area = session.scalar(select(_area_sqmi(_geom(geometry))))
+    if abs(area / drainage - 1) > POSITION_TOLERANCE:
+        log.warning(
+            "Basin by position for gauge %s: %.0f mi² vs published %.0f, rejected",
+            number,
+            area,
+            drainage,
+        )
+        return None
+    return geometry
+
+
+def _geom(geometry: dict):
     # Repair invalid rings and keep only the polygonal parts, as a MultiPolygon.
-    geom = func.ST_Multi(
+    return func.ST_Multi(
         func.ST_CollectionExtract(
             func.ST_MakeValid(func.ST_SetSRID(func.ST_GeomFromGeoJSON(json.dumps(geometry)), 4326)),
             3,
         )
     )
+
+
+def _area_sqmi(geom):
+    return func.ST_Area(func.Geography(geom)) / SQ_METERS_PER_SQ_MILE
+
+
+def _store(session: Session, gauge_id: int, geometry: dict) -> None:
+    geom = _geom(geometry)
     values = {
         "geom": geom,
-        "area_sqmi": func.ST_Area(func.Geography(geom)) / SQ_METERS_PER_SQ_MILE,
+        "area_sqmi": _area_sqmi(geom),
         "source": "nldi",
         "fetched_at": datetime.now(UTC),
     }

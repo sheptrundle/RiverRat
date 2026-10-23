@@ -49,11 +49,14 @@ MIN_LIBRARY_COVERAGE = 0.95
 
 @dataclass(frozen=True)
 class State:
-    """The gauge now: flow (cfs), antecedent precipitation index (mm), and the time."""
+    """The gauge now: flow (cfs), antecedent precipitation index (mm), and the time.
+    `rain_72h_mm`, the basin rain over the last 72 h, picks the dry-spell forecast's class
+    (models/recession.py); unknown counts as dry."""
 
     q: float
     api_mm: float
     at: datetime
+    rain_72h_mm: float | None = None
 
 
 @dataclass(frozen=True)

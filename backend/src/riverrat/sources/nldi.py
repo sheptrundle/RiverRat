@@ -26,6 +26,16 @@ def basin_url(number: str) -> str:
     return f"{BASE_URL}/nwissite/USGS-{number}/basin?f=json&simplified=false&splitCatchment=false"
 
 
+def position_url(lon: float, lat: float) -> str:
+    """The NHDPlus reach at a point."""
+    return f"{BASE_URL}/comid/position?coords=POINT({lon} {lat})&f=json"
+
+
+def comid_basin_url(comid: int) -> str:
+    """The watershed above an NHDPlus reach's outlet, for gauges NLDI doesn't index."""
+    return f"{BASE_URL}/comid/{comid}/basin?f=json&simplified=false&splitCatchment=false"
+
+
 def parse_basin(body: dict[str, Any]) -> dict[str, Any] | None:
     """The watershed polygon as GeoJSON (Polygon or MultiPolygon), lon/lat."""
     features = body.get("features") or []

@@ -28,13 +28,28 @@ def square_area_sqmi(lat: float, size: float = 0.1) -> float:
 
 
 class FakeNLDI:
-    def __init__(self, basins: dict[str, dict | None]):
+    """Basins by gauge number; `comids` maps a "lon lat" point to a COMID whose basin is
+    `comid_basins[comid]`."""
+
+    def __init__(self, basins: dict[str, dict | None], comids=None, comid_basins=None):
         self.basins = basins
+        self.comids = comids or {}
+        self.comid_basins = comid_basins or {}
         self.requests = 0
 
     def handler(self, request: httpx2.Request) -> httpx2.Response:
         self.requests += 1
-        number = request.url.path.split("/")[-2].removeprefix("USGS-")
+        path = request.url.path
+        if path.endswith("/comid/position"):
+            point = request.url.params["coords"].removeprefix("POINT(").removesuffix(")")
+            comid = self.comids.get(point)
+            if comid is None:
+                return httpx2.Response(404, json={"type": "error"})
+            return httpx2.Response(200, json={"features": [{"properties": {"comid": str(comid)}}]})
+        if "/comid/" in path:
+            geometry = self.comid_basins[int(path.split("/")[-2])]
+            return httpx2.Response(200, json={"features": [{"geometry": geometry}]})
+        number = path.split("/")[-2].removeprefix("USGS-")
         if number not in self.basins:
             return httpx2.Response(404, json={"type": "error"})
         geometry = self.basins[number]
@@ -47,8 +62,10 @@ def run(fake: FakeNLDI, session, **kwargs):
         return jobs.sync_basins(client, session, **kwargs)
 
 
-def add_gauge(session, number, drainage=None, source="USGS"):
+def add_gauge(session, number, drainage=None, source="USGS", at=None):
     gauge = Gauge(source=source, source_id=number, name=number, drainage_area_sqmi=drainage)
+    if at:
+        gauge.geom = func.ST_SetSRID(func.ST_MakePoint(*at), 4326)
     session.add(gauge)
     session.commit()
     return gauge
@@ -117,3 +134,20 @@ def test_invalid_polygons_are_repaired(session):
     run(FakeNLDI({"A": BOW_TIE}), session)
     assert session.scalar(select(func.ST_IsValid(Basin.geom))) is True
     assert session.scalar(select(Basin.area_sqmi)) > 0
+
+
+def test_unindexed_gauges_fall_back_to_the_reach_at_their_location(session):
+    area = square_area_sqmi(38.0)
+    add_gauge(session, "A", drainage=area, at=(-80.95, 38.05))
+    add_gauge(session, "B", drainage=area * 3, at=(-79.95, 38.05))  # snapped to a side stream
+    fake = FakeNLDI(
+        {},
+        comids={"-80.95 38.05": 11, "-79.95 38.05": 22},
+        comid_basins={11: square(-81, 38), 22: square(-80, 38)},
+    )
+
+    stats = run(fake, session)
+
+    assert (stats.fetched, stats.by_position, stats.missing) == (1, 1, 1)
+    stored = session.execute(select(Gauge.source_id).join(Basin, Basin.gauge_id == Gauge.id)).all()
+    assert [s for (s,) in stored] == ["A"]

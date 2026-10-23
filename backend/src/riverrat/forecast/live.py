@@ -15,6 +15,7 @@ from riverrat.features import events, hourly
 from riverrat.jobs.rain import STAGE4
 from riverrat.jobs.rain_forecast import NBM
 from riverrat.models.analog import State
+from riverrat.models.recession import WET_LOOKBACK_H
 from riverrat.sources.nbm import PERCENTILES, PERIOD_H
 
 # Forecasts start from the latest reading up to this old (a laptop may have slept); the
@@ -56,7 +57,12 @@ def current(session: Session, gauge_id: int, now: datetime) -> Current | None:
         rain[API_HOURS - 1 - int((at - ts).total_seconds()) // 3600] = np.nan if mm is None else mm
     api_mm = float(events._api(np.nan_to_num(rain))[-1])
     return Current(
-        state=State(q=float(cfs[last]), api_mm=api_mm, at=at),
+        state=State(
+            q=float(cfs[last]),
+            api_mm=api_mm,
+            at=at,
+            rain_72h_mm=float(np.nansum(rain[-WET_LOOKBACK_H:])),
+        ),
         ft=float(ft[last]) if np.isfinite(ft[last]) else None,
         rain_hours=int(np.isfinite(rain).sum()),
         recent_start=hours[0].astype("datetime64[s]").item().replace(tzinfo=UTC),
