@@ -75,3 +75,14 @@ def test_a_second_storm_adds_to_the_first(library):
     assert np.all(medians(two, late)[wet] > 1.2 * medians(one, late)[wet])
     # before the second storm the paths are the same
     np.testing.assert_allclose(two.members[:, :60], one.members[:, :60])
+
+
+def test_the_whatif_storm_starts_the_next_evening_with_some_lead():
+    from riverrat.jobs.outlook import whatif_storm_start
+
+    assert whatif_storm_start(datetime(2026, 6, 1, 14, tzinfo=UTC)) == datetime(
+        2026, 6, 1, 22, tzinfo=UTC
+    )
+    assert whatif_storm_start(datetime(2026, 6, 1, 20, 30, tzinfo=UTC)) == datetime(
+        2026, 6, 2, 22, tzinfo=UTC
+    )

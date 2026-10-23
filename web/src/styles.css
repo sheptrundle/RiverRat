@@ -459,3 +459,44 @@ table.outlook tbody tr:hover td:not(.day-cell) {
   font-size: 11px;
   padding: 0 7px;
 }
+
+/* header tabs */
+.tabs {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.tab {
+  font-size: 16px;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  color: var(--text);
+  background: var(--panel);
+}
+.tab:hover {
+  text-decoration: none;
+  border-color: var(--accent);
+}
+.tab.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* region-wide rain slider */
+.rain-bar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 12px 0;
+}
+.rain-bar input[type="range"] {
+  width: 100%;
+  accent-color: var(--rain);
+}
+.rain-bar.on {
+  border-color: var(--rain);
+  box-shadow: 0 0 0 1px var(--rain);
+}

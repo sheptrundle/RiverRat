@@ -144,10 +144,13 @@ export type OutlookReach = {
   as_of: string;
   extrapolated: boolean;
   days: OutlookDay[];
+  whatif: { day: string; p_runnable: number[] }[] | null; // per amount in Outlook.whatif_rain_in
 };
 export type Outlook = {
   computed_at: string | null;
   rain_issued_at: string | null;
   days: string[];
+  whatif_storm_start: string | null;
+  whatif_rain_in: number[];
   reaches: OutlookReach[];
 };

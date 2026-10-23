@@ -23,6 +23,11 @@ class OutlookDay(BaseModel):
     rain_in: RainRange | None  # NBM basin rain from now through this day's sunset
 
 
+class WhatIfDay(BaseModel):
+    day: date
+    p_runnable: list[float]  # per amount in Outlook.whatif_rain_in
+
+
 class OutlookReach(BaseModel):
     id: int
     aw_id: int | None
@@ -40,12 +45,17 @@ class OutlookReach(BaseModel):
     as_of: datetime
     extrapolated: bool
     days: list[OutlookDay]
+    whatif: list[WhatIfDay] | None  # if every basin got each of Outlook.whatif_rain_in
 
 
 class Outlook(BaseModel):
     computed_at: datetime | None  # None: the Outlook hasn't been computed yet
     rain_issued_at: datetime | None
     days: list[date]
+    # The region-wide what-if: a typical storm of each amount (inches) on every basin,
+    # its rain starting at whatif_storm_start.
+    whatif_storm_start: datetime | None
+    whatif_rain_in: list[float]
     reaches: list[OutlookReach]
 
 
@@ -62,6 +72,7 @@ def get_outlook(session: SessionDep) -> Outlook:
         )
         .order_by(Reach.river, Reach.section)
     ).all()
+    whatif = next((r[0].whatif for r in rows if r[0].whatif), None)
     reaches = [
         OutlookReach(
             id=reach.id,
@@ -80,6 +91,7 @@ def get_outlook(session: SessionDep) -> Outlook:
             as_of=found.as_of,
             extrapolated=found.extrapolated,
             days=found.days,
+            whatif=found.whatif["days"] if found.whatif else None,
         )
         for found, reach, site, low, high in rows
     ]
@@ -89,5 +101,7 @@ def get_outlook(session: SessionDep) -> Outlook:
             (r[0].rain_issued_at for r in rows if r[0].rain_issued_at), default=None
         ),
         days=sorted({d.day for r in reaches for d in r.days}),
+        whatif_storm_start=whatif["storm_start"] if whatif else None,
+        whatif_rain_in=whatif["rain_in"] if whatif else [],
         reaches=reaches,
     )

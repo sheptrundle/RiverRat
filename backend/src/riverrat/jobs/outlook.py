@@ -5,6 +5,10 @@
 Each forecastable reach gets its gauge's ensemble under the latest NBM rain forecast
 (forecast/outlook.py) turned into daily products in the reach's bands. Reaches sharing
 a gauge share its ensemble. The worker reruns this hourly, after the rain forecasts.
+
+Each reach also gets the Outlook page's what-if: its chance of running each day if
+every basin got 0–3 inches in a typical storm starting the same evening (the slider's
+curve, forecast/response.py), so the page can move a region-wide slider instantly.
 """
 
 import argparse
@@ -12,7 +16,7 @@ import logging
 import time
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -23,13 +27,19 @@ from riverrat.config import get_settings
 from riverrat.db.models import Gauge, Reach, ReachGauge, ReachOutlook
 from riverrat.db.session import get_engine
 from riverrat.forecast import bands as band_names
-from riverrat.forecast import live, outlook
+from riverrat.forecast import live, outlook, response
 from riverrat.forecast.daily import daily
 from riverrat.forecast.daylight import sun_times
 from riverrat.forecast.response import MM_PER_IN, forecast_total
 from riverrat.forecast.target import NoForecast, Target, target
+from riverrat.models import analog
 
 log = logging.getLogger(__name__)
+
+WHATIF_RAIN_IN = tuple(np.round(np.arange(0, 3.001, 0.25), 2))
+WHATIF_STORM = "typical"
+STORM_HOUR_UTC = 22  # 6 pm EDT / 5 pm EST
+STORM_LEAD = timedelta(hours=2)  # the soonest the what-if storm starts
 
 
 @dataclass
@@ -52,7 +62,9 @@ def compute(session: Session, *, data_dir: Path, now: datetime) -> OutlookStats:
         .unique()
         .all()
     )
+    storm_start = whatif_storm_start(now)
     ensembles: dict[int, tuple[outlook.Ensemble, live.RainOutlook | None]] = {}
+    whatifs: dict[int, list] = {}  # gauge id → a forecast per what-if rain amount
     rows = []
     for reach in reaches:
         try:
@@ -66,8 +78,17 @@ def compute(session: Session, *, data_dir: Path, now: datetime) -> OutlookStats:
                 outlook.ensemble(found.library, found.current.state, rain),
                 rain,
             )
+            whatifs[found.gauge.id] = response.forecasts(
+                found.library,
+                found.current.state,
+                storm_type=WHATIF_STORM,
+                start_h=_start_h(found.current.state.at, storm_start),
+                rain_in=WHATIF_RAIN_IN,
+            )
         ensemble, rain = ensembles[found.gauge.id]
-        rows.append(_row(found, ensemble, rain, now))
+        row = _row(found, ensemble, rain, now)
+        row.whatif = _whatif(found, whatifs[found.gauge.id], storm_start)
+        rows.append(row)
     session.execute(delete(ReachOutlook))
     session.add_all(rows)
     session.commit()
@@ -110,6 +131,41 @@ def _row(found: Target, ensemble: outlook.Ensemble, rain, now: datetime) -> Reac
         extrapolated=ensemble.extrapolated,
         days=days,
     )
+
+
+def whatif_storm_start(now: datetime) -> datetime:
+    """The next STORM_HOUR_UTC at least STORM_LEAD from now."""
+    start = (now + STORM_LEAD).replace(hour=STORM_HOUR_UTC, minute=0, second=0, microsecond=0)
+    return start if start >= now + STORM_LEAD else start + timedelta(days=1)
+
+
+def _start_h(at: datetime, storm_start: datetime) -> int:
+    """The storm's start_h for a forecast from `at`: its first wet hour ends an hour
+    after `storm_start`."""
+    hours = round((storm_start - at) / timedelta(hours=1))
+    return int(np.clip(hours, 0, analog.HORIZON_H - 24))
+
+
+def _whatif(found: Target, forecasts: list, storm_start: datetime) -> dict:
+    curve = response.rain_response(
+        found.library,
+        found.current.state,
+        found.bands,
+        found.lat,
+        found.lon,
+        to_units=found.to_units,
+        rain_in=WHATIF_RAIN_IN,
+        precomputed=forecasts,
+    )
+    return {
+        "storm_start": storm_start.isoformat(),
+        "storm_type": WHATIF_STORM,
+        "rain_in": list(WHATIF_RAIN_IN),
+        "days": [
+            {"day": d.day.isoformat(), "p_runnable": [round(float(p), 3) for p in d.p_runnable]}
+            for d in curve.days
+        ],
+    }
 
 
 def _sig(value: float, digits: int = 3) -> float:

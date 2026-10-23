@@ -27,6 +27,14 @@ export default function App() {
           <a href="#/">River Rat</a>
         </h1>
         <span className="muted">Will it run? Whitewater forecasts from rain and history.</span>
+        <nav className="tabs">
+          <a href="#/" className={!reach && !hash.startsWith("#/reaches") ? "tab on" : "tab"}>
+            Outlook
+          </a>
+          <a href="#/reaches" className={hash.startsWith("#/reaches") ? "tab on" : "tab"}>
+            All reaches
+          </a>
+        </nav>
       </header>
       {reach ? (
         <ReachPage key={reach[1]} reachId={Number(reach[1])} />

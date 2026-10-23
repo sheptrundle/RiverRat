@@ -321,6 +321,13 @@ def test_outlook_job_and_endpoint(client, session, lake):
     assert days[1]["peak_bands"]["too_low"] < 0.5
     assert days[2]["rain_in"]["p50"] > days[1]["rain_in"]["p50"]
 
+    # the region-wide what-if: a storm the same evening (22:00 UTC), 0–3 in
+    assert body["whatif_storm_start"] == "2026-06-01T22:00:00Z"
+    assert body["whatif_rain_in"][0] == 0 and body["whatif_rain_in"][-1] == 3
+    tomorrow = reach["whatif"][1]["p_runnable"]
+    assert len(tomorrow) == len(body["whatif_rain_in"])
+    assert tomorrow[0] == 0 and max(tomorrow) > 0.5
+
     # a rerun replaces the rows rather than adding to them
     outlook_jobs.compute(session, data_dir=lake, now=NOW)
     assert len(client.get("/api/outlook").json()["reaches"]) == 1

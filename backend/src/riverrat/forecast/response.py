@@ -79,6 +79,23 @@ def no_rain(library: analog.AnalogLibrary, state: analog.State) -> analog.Foreca
     return analog.Forecast(state.at, path[None], np.ones(1), [], False)
 
 
+def forecasts(
+    library: analog.AnalogLibrary,
+    state: analog.State,
+    *,
+    storm_type: str = "typical",
+    start_h: int = 0,
+    rain_in=RAIN_IN,
+) -> list[analog.Forecast]:
+    """One forecast per rain amount; reaches sharing a gauge can share them."""
+    return [
+        library.forecast(state, storm(amount, storm_type, start_h))
+        if amount > 0
+        else no_rain(library, state)
+        for amount in rain_in
+    ]
+
+
 def rain_response(
     library: analog.AnalogLibrary,
     state: analog.State,
@@ -90,17 +107,18 @@ def rain_response(
     start_h: int = 0,
     to_units=None,
     rain_in=RAIN_IN,
+    precomputed: list[analog.Forecast] | None = None,
 ) -> Response:
     """`to_units` converts forecast cfs into the bands' units (a rating's `to_ft` for
-    reaches rated in feet)."""
+    reaches rated in feet). `precomputed` are `forecasts(...)` for the same arguments."""
     rain_in = np.asarray(rain_in, float)
     convert = to_units or (lambda cfs: cfs)
+    if precomputed is None:
+        precomputed = forecasts(
+            library, state, storm_type=storm_type, start_h=start_h, rain_in=rain_in
+        )
     peaks, reach, too_high, day_list = [], [], [], None
-    for amount in rain_in:
-        if amount > 0:
-            forecast = library.forecast(state, storm(amount, storm_type, start_h))
-        else:
-            forecast = no_rain(library, state)
+    for forecast in precomputed:
         values = convert(forecast.members)
         days = daily(values, forecast.weights, forecast.start, bands, lat, lon)
         day_list = day_list or [d.day for d in days]

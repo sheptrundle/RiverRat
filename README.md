@@ -8,7 +8,7 @@
 
 ## What it does
 
-- **Outlook.** The home page ranks every forecast reach by its chance of running on each of the next 6 days, from NOAA's probabilistic rain forecast. Sort by any day, class, state, or river.
+- **Outlook.** The home page ranks every forecast reach by its chance of running on each of the next 6 days, from NOAA's probabilistic rain forecast. Sort by any day, class, state, or river. A rain slider asks "what if every watershed got 1.5 inches tonight?" and re-ranks every reach instantly.
 - **What-if slider.** Pick a rain amount, a storm type (3-hour thunderstorm, typical 18-hour storm, or 36-hour soaker), and when it starts. See the river's predicted hydrograph, the chance of running each day, and the past storms behind the forecast.
 - **Rain needed.** For each day, the least rain that gives an even chance of reaching the runnable range, drawn against NOAA's forecast basin rain.
 - **Honest uncertainty.** Every forecast is a weighted set of possible futures, so it shows a range and a probability rather than one line.

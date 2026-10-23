@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Outlook, OutlookReach } from "./api";
 import { useApi } from "./api";
 import { BAND_COLORS, BandBar } from "./charts";
-import { BAND_LABELS, classLabel, flow, percent, rainRange, timeLabel, weekday } from "./format";
+import { BAND_LABELS, classLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
 import type { Sort } from "./tables";
 import { PAGE_SIZES, Pager, SortHeader, allStates, compareClass, matchesQuery, paged, stateCodes } from "./tables";
 
@@ -13,10 +13,6 @@ const CHANCES = [
   { label: "≥ 10% some day", min: 0.1 },
   { label: "≥ 50% some day", min: 0.5 },
 ];
-
-function best(r: OutlookReach): number {
-  return Math.max(0, ...r.days.map((d) => d.p_runnable));
-}
 
 /** A day cell's background: green, stronger with the chance of running. */
 function shade(p: number): string {
@@ -31,9 +27,22 @@ export default function OutlookPage() {
   const [sort, setSort] = useState<Sort<Column>>({ column: "best", descending: true });
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
+  // 0: NOAA's forecast; else an index into whatif_rain_in (a link can set it: #/?rain=1.5)
+  const [rainParam] = useState(() => Number(new URLSearchParams(location.hash.split("?")[1]).get("rain") ?? 0));
+  const [rainIndex, setRainIndex] = useState(0);
+  useEffect(() => {
+    if (data && rainParam > 0) setRainIndex(Math.max(0, data.whatif_rain_in.indexOf(rainParam)));
+  }, [data, rainParam]);
 
   const reaches = data?.reaches ?? [];
+  const days = data?.days ?? [];
   const states = useMemo(() => allStates(reaches), [reaches]);
+  /** The chance of running on `day`: under NOAA's forecast, or the what-if storm. */
+  const chance = (r: OutlookReach, day: string): number | null => {
+    if (rainIndex > 0) return r.whatif?.find((w) => w.day === day)?.p_runnable[rainIndex] ?? null;
+    return r.days.find((d) => d.day === day)?.p_runnable ?? null;
+  };
+  const best = (r: OutlookReach) => Math.max(0, ...days.map((day) => chance(r, day) ?? 0));
   const matches = useMemo(() => {
     const found = reaches.filter(
       (r) => matchesQuery(r, query) && (!state || stateCodes(r.states).includes(state)) && best(r) >= minChance,
@@ -44,22 +53,21 @@ export default function OutlookPage() {
       if (sort.column === "river") return sign * a.river.localeCompare(b.river);
       if (sort.column === "state") return sign * stateCodes(a.states).localeCompare(stateCodes(b.states));
       if (sort.column === "class") return compareClass(a.difficulty, b.difficulty, sign);
-      const n = Number(sort.column.slice(4));
-      return sign * ((a.days[n]?.p_runnable ?? 0) - (b.days[n]?.p_runnable ?? 0));
+      const day = days[Number(sort.column.slice(4))];
+      return sign * ((chance(a, day) ?? 0) - (chance(b, day) ?? 0));
     };
     return found.sort(
       (a, b) =>
         byColumn(a, b) || a.river.localeCompare(b.river) || a.section.localeCompare(b.section, undefined, { numeric: true }),
     );
-  }, [reaches, query, state, minChance, sort]);
+  }, [reaches, days, query, state, minChance, sort, rainIndex]);
 
   if (error) return <p className="error">Couldn't load the Outlook: {error}</p>;
   if (!data) return <p className="muted">Loading the Outlook…</p>;
   if (!data.computed_at)
     return (
       <p className="muted">
-        The Outlook hasn't been computed yet. It runs hourly in the worker (<code>python -m riverrat.jobs.outlook</code>).{" "}
-        <a href="#/reaches">Browse all reaches →</a>
+        The Outlook hasn't been computed yet. It runs hourly in the worker (<code>python -m riverrat.jobs.outlook</code>).
       </p>
     );
 
@@ -80,6 +88,8 @@ export default function OutlookPage() {
     <Pager page={current} pages={pages} pageSize={pageSize} onPage={setPage} onPageSize={resetting(setPageSize)} />
   );
   const dry = reaches.every((r) => r.days.every((d) => !d.rain_in || d.rain_in.p90 < 0.05));
+  const whatif = rainIndex > 0;
+  const stormStart = data.whatif_storm_start ? Date.parse(data.whatif_storm_start) : null;
 
   return (
     <section>
@@ -87,9 +97,33 @@ export default function OutlookPage() {
       <p className="muted">
         Chance each reach is in its runnable range at some point during daylight. Updated {timeLabel(Date.parse(data.computed_at))}
         {data.rain_issued_at && ` from NOAA's ${timeLabel(Date.parse(data.rain_issued_at))} rain forecast`}.
-        {dry && " The forecast is dry, so these follow each river's recession."}{" "}
-        <a href="#/reaches">All reaches →</a>
+        {dry && " NOAA's forecast is dry, so these follow each river's recession: try the rain slider."}
       </p>
+      {stormStart && data.whatif_rain_in.length > 1 && (
+        <div className={whatif ? "panel rain-bar on" : "panel rain-bar"}>
+          <label htmlFor="region-rain">
+            <strong>
+              {whatif
+                ? `What if every watershed got ${inches(data.whatif_rain_in[rainIndex])} starting ${timeLabel(stormStart)}?`
+                : "Rain: NOAA's forecast"}
+            </strong>
+          </label>
+          <input
+            id="region-rain"
+            type="range"
+            min={0}
+            max={data.whatif_rain_in.length - 1}
+            step={1}
+            value={rainIndex}
+            onChange={(e) => resetting(setRainIndex)(Number(e.target.value))}
+          />
+          <span className="muted small">
+            {whatif
+              ? "A typical 18-hour storm of this size on every watershed, in place of the forecast. Open a reach to try other amounts, timings, and storm types."
+              : `Drag to add a storm of up to ${data.whatif_rain_in[data.whatif_rain_in.length - 1]} in on every watershed, starting ${timeLabel(stormStart)}.`}
+          </span>
+        </div>
+      )}
       <div className="filters">
         <input
           autoFocus
@@ -150,23 +184,24 @@ export default function OutlookPage() {
                 </td>
                 {data.days.map((day) => {
                   const d = r.days.find((x) => x.day === day);
+                  const p = chance(r, day);
                   return (
                     <td
                       key={day}
                       className="day-cell"
-                      style={d ? { background: shade(d.p_runnable) } : undefined}
+                      style={p !== null ? { background: shade(p) } : undefined}
                       title={
-                        d
+                        d && !whatif
                           ? `Peak ~${flow(d.peak.p50, r.metric)}` +
                             (d.p_too_high_all_day >= 0.05 ? ` · ${percent(d.p_too_high_all_day)} too high all day` : "") +
                             (d.rain_in ? ` · rain through sunset: ${rainRange(d.rain_in)}` : "")
                           : ""
                       }
                     >
-                      {d ? (
+                      {p !== null ? (
                         <>
-                          <strong>{percent(d.p_runnable)}</strong>
-                          <BandBar bands={d.peak_bands} />
+                          <strong>{percent(p)}</strong>
+                          {d && !whatif && <BandBar bands={d.peak_bands} />}
                         </>
                       ) : (
                         <span className="muted">–</span>

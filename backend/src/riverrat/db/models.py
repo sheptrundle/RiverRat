@@ -228,3 +228,6 @@ class ReachOutlook(Base):
     now_band: Mapped[str] = mapped_column(String(16))
     extrapolated: Mapped[bool]
     days = mapped_column(JSONB, nullable=False)
+    # Chance of running each day if every basin got 0–3 in starting the same evening:
+    # {storm_start, storm_type, rain_in: [...], days: [{day, p_runnable: [...]}]}
+    whatif = mapped_column(JSONB)

@@ -58,9 +58,6 @@ export default function ReachList() {
 
   return (
     <section>
-      <p>
-        <a href="#/">← Outlook</a>
-      </p>
       <h2>All reaches</h2>
       <p className="muted">Every reach in the catalog, including those without a forecast (no USGS gauge with a runnable range, or too little history).</p>
       <div className="filters">
