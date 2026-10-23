@@ -1,8 +1,51 @@
 # River Rat
 
-Will your river be runnable on the day you want to go? River Rat combines live gauges, rain forecasts, and a model of how each river responds to rain to give an honest probability, up to 6 days out.
+**Will my river be runnable on the day I want to go?** River Rat forecasts whether whitewater rivers in the Southern Appalachians, Virginia, West Virginia, and Maryland will be in their runnable range up to 6 days out. It works from live gauges, NOAA rain data, and a model of how each river has responded to rain over the last 24 years. Forecasts come as probabilities, and they're tested against what the rivers actually did.
 
-**Status:** early development (Phase 0: foundations). See [DESIGN.md](DESIGN.md) for the design and roadmap.
+![What-if forecast for the Lower Meadow River](docs/images/whatif.png)
+
+*Above: the Lower Meadow is too low today. If its watershed got 1 inch of rain tonight, the chance of a runnable day would peak at 88% on Monday. Shown: the last 48 hours of flow, the forecast median and 80% range drawn over the reach's flow bands, and each day's chance of being in range during daylight.*
+
+## What it does
+
+- **What-if slider.** Pick a rain amount, a storm type (3-hour thunderstorm, typical 18-hour storm, or 36-hour soaker), and when it starts. See the river's predicted hydrograph, the chance of running each day, and the past storms behind the forecast.
+- **Rain needed.** For each day, the least rain that gives an even chance of reaching the runnable range, drawn against NOAA's forecast basin rain.
+- **Honest uncertainty.** Every forecast is a weighted set of possible futures, so it shows a range and a probability rather than one line.
+- **1,497 reaches** from the American Whitewater catalog. Those with a usable USGS gauge are forecast through 309 gauges with long enough records. Low, medium, and high bands come from each reach's runnable range. "Runnable" means in range at some point between sunrise and sunset.
+
+![How much rain a day needs](docs/images/rain-needed.png)
+
+## How it works
+
+```
+USGS 15-min flow (2002→now)  ┐
+NOAA radar rain per basin    ├─▶ hourly table per gauge ─▶ past storms + responses ─▶ analog model ─▶ daily runnability
+NOAA rain forecast (NBM)     ┘    (flow + watershed rain)     (367,000 storm events)     (60 nearest     (sunrise→sunset,
+                                                                                          storms)         per reach's bands)
+```
+
+1. **Rain where it matters.** Each gauge's watershed is delineated (USGS NLDI), and hourly rain from NOAA's radar/gauge analyses is averaged over it. Rain on the watershed drives the river, not rain at the nearest town.
+2. **Storm library.** 24 years of hourly flow and basin rain are split into storms. For each one, the library records the flow when it started, how wet the ground already was, the rain's total, duration, and intensity, the season, and the river's response.
+3. **Analog forecast.** For a new storm, the model finds the 60 most similar past storms at that gauge and replays their hydrographs from today's flow, scaled to this storm's rain. Their spread is the uncertainty. Between storms, flow follows the gauge's own fitted recession curve.
+4. **From flow to "will it run".** Each possible future is checked against the reach's bands during that day's daylight. Reaches rated in feet use a stage–flow rating fitted from each gauge's own readings (median error 0.015 ft).
+
+## Results
+
+Tested on 49,582 storms from 2020–2022 at 309 gauges. The model's library held only storms through 2019, and observed rain stood in for the rain forecast, which isolates how well it predicts the river's response. 2023 onward is held out as a final test set.
+
+| Model | Forecast error (CRPS, log flow) | Peaks inside the 80% range |
+|---|---|---|
+| Persistence (flow stays where it is) | 0.476 | 1% |
+| Average response of all past storms | 0.304 | 78% |
+| **River Rat analog model** | **0.182** (40% lower) | **80%** |
+
+The analog model beats the average-response baseline at **every one of the 309 gauges**, with a typical gain of 42%. Its probabilities are calibrated: across ~340,000 reach-days, forecasts of 30%, 50%, 70%, and 97% came true 30%, 51%, 73%, and 97% of the time.
+
+## Built with
+
+Python (NumPy, PyArrow, SQLAlchemy, FastAPI) · PostgreSQL + PostGIS · React + TypeScript (Vite) with hand-drawn SVG charts · Docker Compose · GitHub Actions. Data: USGS Water Data API, NOAA Stage IV and AORC rain, NOAA National Blend of Models forecasts (GRIB2, read by byte range from AWS), USGS NLDI watersheds, and American Whitewater's reach catalog.
+
+**Status:** the data pipelines, model, What-if API, and reach page are done. Next up is the Outlook, a home page that ranks every reach by its chance of running over the next 6 days using NOAA's rain forecast. [DESIGN.md](DESIGN.md) has the full design, the decision log, and the roadmap.
 
 ## Layout
 
@@ -12,7 +55,7 @@ Will your river be runnable on the day you want to go? River Rat combines live g
 | `web/` | React + TypeScript (Vite) |
 | `DESIGN.md` | Design document |
 
-## Local development
+## Running it locally
 
 Requirements: Docker (Docker Desktop or [Colima](https://github.com/abiosoft/colima)), [uv](https://docs.astral.sh/uv/), [pnpm](https://pnpm.io/), Node 22+.
 
