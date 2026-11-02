@@ -761,7 +761,6 @@ h2 .star {
   border-radius: 16px;
   background: color-mix(in srgb, var(--panel) 45%, transparent);
   backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
 }
 .hero h2 {
