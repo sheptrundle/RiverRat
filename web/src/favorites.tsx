@@ -67,3 +67,17 @@ export function Star({ id, favorites, toggle }: { id: number; favorites: Set<num
     </button>
   );
 }
+
+/** The "Favorites Only" switch for a list of reaches. A link can start it on with
+ * `?favorites=1` (or the old #/favorites page). */
+export function FavoritesToggle({ on, onChange }: { on: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <button type="button" className={on ? "favorites-toggle on" : "favorites-toggle"} aria-pressed={on} onClick={() => onChange(!on)}>
+      Favorites Only
+    </button>
+  );
+}
+
+export function favoritesInLink(): boolean {
+  return location.hash.startsWith("#/favorites") || new URLSearchParams(location.hash.split("?")[1]).get("favorites") === "1";
+}

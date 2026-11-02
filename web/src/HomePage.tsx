@@ -3,6 +3,15 @@ import { useApi } from "./api";
 
 const LIKELY = 0.5;
 
+/** Visitors who ask for less motion get the still frame instead of the video. */
+function prefersStill(): boolean {
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
 /** The landing page: what River Rat is, a live number, and the way in. */
 export default function HomePage() {
   const { data } = useApi<Outlook>("/api/outlook");
@@ -16,26 +25,42 @@ export default function HomePage() {
 
   return (
     <section className="home">
-      <div className="hero">
-        <h2>Will your river run this weekend?</h2>
-        <p className="lede">
-          River Rat forecasts whether whitewater sections across the Southeast and Mid-Atlantic will be in their runnable range
-          over the next six days. It combines live gauges, NOAA's rain forecast, and 24 years of how each river has answered
-          rain.
-        </p>
-        {data && weekendLabel && (
-          <p className="live-stat">
-            <strong>{likely.toLocaleString()}</strong> of {gauged.length.toLocaleString()} gauged sections are likely to run{" "}
-            {weekendLabel}.
-          </p>
+      <div className="hero-backdrop">
+        {prefersStill() ? (
+          <img className="hero-media" src="/video/fayette-station.jpg" alt="" />
+        ) : (
+          <video
+            className="hero-media"
+            src="/video/fayette-station.mp4"
+            poster="/video/fayette-station.jpg"
+            autoPlay
+            muted
+            loop
+            playsInline
+            aria-hidden
+          />
         )}
-        <div className="hero-actions">
-          <a className="button primary" href="#/outlook">
-            See the Outlook →
-          </a>
-          <a className="button" href="#/track-record">
-            How accurate is it?
-          </a>
+        <div className="hero">
+          <h2>Will your river run this weekend?</h2>
+          <p className="lede">
+            River Rat forecasts whether whitewater sections across the Southeast and Mid-Atlantic will be in their runnable range
+            over the next six days. It combines live gauges, NOAA's rain forecast, and 24 years of how each river has answered
+            rain.
+          </p>
+          {data && weekendLabel && (
+            <p className="live-stat">
+              <strong>{likely.toLocaleString()}</strong> of {gauged.length.toLocaleString()} gauged sections are likely to run{" "}
+              {weekendLabel}.
+            </p>
+          )}
+          <div className="hero-actions">
+            <a className="button primary" href="#/outlook">
+              See the Outlook →
+            </a>
+            <a className="button" href="#/track-record">
+              How accurate is it?
+            </a>
+          </div>
         </div>
       </div>
 

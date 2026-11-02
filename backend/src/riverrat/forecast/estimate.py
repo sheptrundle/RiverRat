@@ -28,6 +28,19 @@ SPREAD_LEVELS = (0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95)
 MIN_REACHES = 50
 DONOR_RATIO = 4.0  # donor basin within this factor of the reach's
 DONOR_MAX_KM = 80.0
+# A take-out watershed this much larger than the put-in's (or SNAP_RATIO_BIG when it's
+# over SNAP_BIG_SQMI) means the take-out point snapped onto the bigger river the creek
+# flows into: Elsey Run's came out 1,032 mi² (the Cheat) against 4 mi² at its put-in.
+SNAP_RATIO = 20.0
+SNAP_RATIO_BIG = 8.0
+SNAP_BIG_SQMI = 500.0
+
+
+def snapped_downstream(area_sqmi: float, putin_area_sqmi: float | None) -> bool:
+    if not putin_area_sqmi or putin_area_sqmi <= 0:
+        return putin_area_sqmi is not None  # a put-in with no watershed: unusable
+    ratio = area_sqmi / putin_area_sqmi
+    return ratio > SNAP_RATIO or (area_sqmi > SNAP_BIG_SQMI and ratio > SNAP_RATIO_BIG)
 
 
 @dataclass(frozen=True)

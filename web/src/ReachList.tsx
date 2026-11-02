@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReachSummary } from "./api";
 import { useApi } from "./api";
-import { Star, useFavorites } from "./favorites";
+import { FavoritesToggle, Star, favoritesInLink, useFavorites } from "./favorites";
 import { classLabel, rangeLabel } from "./format";
 import type { Sort } from "./tables";
 import {
@@ -22,10 +22,7 @@ type Column = "river" | "section" | "class" | "state";
 export default function ReachList() {
   const { data, error } = useApi<ReachSummary[]>("/api/reaches");
   const [favorites, toggleFavorite] = useFavorites();
-  // a link can open it filtered: #/reaches?favorites=1
-  const [favoritesOnly, setFavoritesOnly] = useState(
-    () => new URLSearchParams(location.hash.split("?")[1]).get("favorites") === "1",
-  );
+  const [favoritesOnly, setFavoritesOnly] = useState(favoritesInLink);
   const [query, setQuery] = useState("");
   const [state, setState] = useState("");
   const [sort, setSort] = useState<Sort<Column>>({ column: "river", descending: false });
@@ -99,17 +96,13 @@ export default function ReachList() {
             <option key={s}>{s}</option>
           ))}
         </select>
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={favoritesOnly}
-            onChange={(e) => {
-              setFavoritesOnly(e.target.checked);
-              setPage(0);
-            }}
-          />{" "}
-          <span className="gold">★</span> Favorites only
-        </label>
+        <FavoritesToggle
+          on={favoritesOnly}
+          onChange={(on) => {
+            setFavoritesOnly(on);
+            setPage(0);
+          }}
+        />
       </div>
       {error && <p className="error">Couldn't load reaches: {error}</p>}
       {!data && !error && <p className="muted">Loading reaches…</p>}

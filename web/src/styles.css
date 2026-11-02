@@ -46,6 +46,7 @@
 
 body {
   margin: 0;
+  overflow-x: clip; /* full-width sections use 100vw, which counts the scrollbar */
   background: var(--bg);
   color: var(--text);
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -727,11 +728,41 @@ h2 .star {
 }
 
 /* home */
+/* the video fills the page's width behind the hero panel */
+.hero-backdrop {
+  position: relative;
+  width: 100vw;
+  margin: -16px 0 24px calc(50% - 50vw);
+  min-height: min(82vh, 720px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 48px 16px 40px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: #2b3a33;
+}
+.hero-media {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* a wide screen crops the tall clip: the paddler sits behind the panel, with the
+     trees and rocks above it */
+  object-position: 50% 56%;
+}
 .hero {
-  padding: 40px 0 24px;
-  max-width: 760px;
+  position: relative;
+  max-width: 720px;
   margin: 0 auto;
+  padding: 32px 36px;
   text-align: center;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--panel) 45%, transparent);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
 }
 .hero h2 {
   font-size: 38px;
@@ -788,7 +819,15 @@ h2 .star {
 }
 @media (max-width: 600px) {
   .hero {
-    padding-top: 20px;
+    padding: 22px 18px;
+  }
+  /* phones: the whole tall clip, sky and bridge above the panel, the paddler behind it */
+  .hero-backdrop {
+    min-height: calc(100vw * 4 / 3);
+    padding: 24px 12px;
+  }
+  .hero-media {
+    object-position: 50% 50%;
   }
   .hero h2 {
     font-size: 28px;
@@ -844,4 +883,64 @@ h2 .star {
   .about {
     grid-template-columns: 1fr;
   }
+}
+
+/* the flow chart's cursor */
+.hydrograph .readout {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-height: 28px;
+  margin-bottom: 6px;
+}
+.hydrograph .hint {
+  margin-left: auto;
+}
+.chart.scrub {
+  cursor: ew-resize;
+  touch-action: pan-y;
+}
+.chart.scrub:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.cursor-line {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.cursor-range {
+  stroke: var(--accent);
+  stroke-width: 8;
+  stroke-opacity: 0.25;
+  stroke-linecap: round;
+}
+.cursor-handle {
+  fill: var(--accent);
+}
+.cursor-dot {
+  fill: var(--panel);
+  stroke: var(--accent);
+  stroke-width: 2.5;
+}
+
+/* "Favorites Only" switch */
+.favorites-toggle {
+  font: inherit;
+  font-weight: 600;
+  white-space: nowrap;
+  padding: 8px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.favorites-toggle:hover {
+  border-color: var(--gold);
+}
+.favorites-toggle.on {
+  background: var(--gold);
+  border-color: var(--gold);
+  color: #1d2420;
 }

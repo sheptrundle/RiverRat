@@ -16,13 +16,12 @@ function useHash(): string {
   return hash;
 }
 
-type Page = "home" | "outlook" | "reaches" | "favorites" | "track" | "credits" | "reach";
+type Page = "home" | "outlook" | "reaches" | "track" | "credits" | "reach";
 
 const MENU: { page: Page; href: string; label: string }[] = [
   { page: "home", href: "#/", label: "Home" },
   { page: "outlook", href: "#/outlook", label: "Outlook" },
   { page: "reaches", href: "#/reaches", label: "All reaches" },
-  { page: "favorites", href: "#/favorites", label: "Favorites" },
   { page: "track", href: "#/track-record", label: "Track record" },
   { page: "credits", href: "#/credits", label: "Credits" },
 ];
@@ -40,9 +39,9 @@ function MenuButton({ label, expanded, onClick }: { label: string; expanded: boo
 function pageOf(hash: string): Page {
   const path = hash.replace(/^#/, "").split("?")[0];
   if (path.startsWith("/reach/")) return "reach";
-  if (path.startsWith("/outlook")) return "outlook";
+  // the old Favorites page is now the Outlook with "Favorites Only" on
+  if (path.startsWith("/outlook") || path.startsWith("/favorites")) return "outlook";
   if (path.startsWith("/reaches")) return "reaches";
-  if (path.startsWith("/favorites")) return "favorites";
   if (path.startsWith("/track-record")) return "track";
   if (path.startsWith("/credits")) return "credits";
   // older links to the Outlook were "#/?rain=1.5"
@@ -111,7 +110,7 @@ export default function App() {
         ) : page === "credits" ? (
           <CreditsPage />
         ) : (
-          <OutlookPage key={page} favoritesOnly={page === "favorites"} />
+          <OutlookPage />
         )}
         <footer className="muted small">
           Not an official forecast and not a safety tool. Check the{" "}

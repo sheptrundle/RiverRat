@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Outlook, OutlookReach } from "./api";
 import { useApi } from "./api";
 import { BAND_COLORS, BandBar } from "./charts";
-import { Star, useFavorites } from "./favorites";
+import { FavoritesToggle, Star, favoritesInLink, useFavorites } from "./favorites";
 import { BAND_LABELS, RANGE_NOTES, classLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
 import type { Sort } from "./tables";
 import {
@@ -30,10 +30,11 @@ function shade(p: number): string {
   return `color-mix(in srgb, var(--band-medium) ${Math.round(p * 70)}%, transparent)`;
 }
 
-/** The Outlook for every forecast reach, or with `favoritesOnly`, the starred ones. */
-export default function OutlookPage({ favoritesOnly = false }: { favoritesOnly?: boolean }) {
+/** Every forecast reach's chances, or with "Favorites Only", the starred ones. */
+export default function OutlookPage() {
   const { data, error } = useApi<Outlook>("/api/outlook");
   const [favorites, toggleFavorite] = useFavorites();
+  const [favoritesOnly, setFavoritesOnly] = useState(favoritesInLink);
   const [query, setQuery] = useState("");
   const [state, setState] = useState("");
   const [minChance, setMinChance] = useState(0);
@@ -91,19 +92,6 @@ export default function OutlookPage({ favoritesOnly = false }: { favoritesOnly?:
       </p>
     );
 
-  if (favoritesOnly && favorites.size === 0)
-    return (
-      <section>
-        <h2>
-          <span className="gold">★</span> Favorites
-        </h2>
-        <p className="panel">
-          No favorites yet. Click the <span className="gold">☆</span> next to any reach, in the <a href="#/outlook">Outlook</a>, in{" "}
-          <a href="#/reaches">All reaches</a>, or on a reach's page, and it shows up here with its forecast.
-        </p>
-      </section>
-    );
-
   const { pages, current, shown } = paged(matches, page, pageSize);
   const onSort = (column: Column) => {
     // chances sort highest first; names A→Z
@@ -128,7 +116,7 @@ export default function OutlookPage({ favoritesOnly = false }: { favoritesOnly?:
 
   return (
     <section>
-      <h2>{favoritesOnly ? <><span className="gold">★</span> Favorites</> : "Outlook"}</h2>
+      <h2>Outlook</h2>
       {favoritesOnly && unforecastFavorites > 0 && (
         <p className="muted small">
           {unforecastFavorites} {unforecastFavorites === 1 ? "favorite has" : "favorites have"} no forecast, so{" "}
@@ -194,115 +182,126 @@ export default function OutlookPage({ favoritesOnly = false }: { favoritesOnly?:
           />{" "}
           Include estimates
         </label>
+        <FavoritesToggle on={favoritesOnly} onChange={resetting(setFavoritesOnly)} />
       </div>
-      <p className="muted">
-        {matches.length.toLocaleString()} of{" "}
-        {favoritesOnly
-          ? `${(favorites.size - unforecastFavorites).toLocaleString()} forecast favorites`
-          : `${reaches.length.toLocaleString()} forecast reaches`}
-        {matches.length > 0 &&
-          ` · showing ${(current * pageSize + 1).toLocaleString()}–${(current * pageSize + shown.length).toLocaleString()}`}
-      </p>
-      {pages > 1 && pager}
-      <div className="table-scroll">
-        <table className="outlook">
-          <thead>
-            <tr>
-              <th className="star-col" aria-label="Favorite" />
-              <SortHeader column="river" label="River" sort={sort} onSort={onSort} />
-              <SortHeader column="class" label="Class" sort={sort} onSort={onSort} />
-              <SortHeader column="state" label="State" sort={sort} onSort={onSort} />
-              <SortHeader
-                column="runs"
-                label={<span title="Share of days in range over the last 10 years">Runs</span>}
-                sort={sort}
-                onSort={onSort}
-              />
-              <th>Now</th>
-              {data.days.map((day, n) => (
-                <SortHeader key={day} className="day-col" column={`day:${n}`} label={weekday(day)} sort={sort} onSort={onSort} />
-              ))}
-              <SortHeader column="best" label="Best" className="day-col" sort={sort} onSort={onSort} />
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((r) => (
-              <tr key={r.id} onClick={() => (location.hash = `#/reach/${r.id}`)}>
-                <td className="star-col">
-                  <Star id={r.id} favorites={favorites} toggle={toggleFavorite} />
-                </td>
-                <td>
-                  <a href={`#/reach/${r.id}`}>{r.river}</a>
-                  {r.range_note && (
-                    <span className="range-warning" title={RANGE_NOTES[r.range_note]}>
-                      {" "}⚠
-                    </span>
-                  )}
-                  <div className="muted small">{sectionLabel(r)}</div>
-                  {r.estimate && (
-                    <div
-                      className="estimate small"
-                      title={`No gauge: estimated from a gauge ${Math.round(r.estimate.distance_km)} km away, scaled to this watershed, with an estimated range`}
-                    >
-                      Estimate
-                    </div>
-                  )}
-                  {r.next_release && data.days.includes(r.next_release) && (
-                    <div className="release small" title="American Whitewater's release calendar; the forecast is the natural flow">
-                      Dam release {weekday(r.next_release)}
-                    </div>
-                  )}
-                </td>
-                <td className="nowrap">{r.difficulty ? classLabel(r.difficulty) : ""}</td>
-                <td>{stateCodes(r.states)}</td>
-                <td className="nowrap muted" title="Share of days in range over the last 10 years">
-                  {r.in_range_share !== null ? percent(r.in_range_share) : ""}
-                </td>
-                <td className="nowrap">
-                  {r.estimate && "~"}
-                  {flow(r.now_value, r.metric)}
-                  <div>
-                    <span className="chip small" style={{ background: BAND_COLORS[r.now_band] }}>
-                      {BAND_LABELS[r.now_band]}
-                    </span>
-                  </div>
-                </td>
-                {data.days.map((day) => {
-                  const d = r.days.find((x) => x.day === day);
-                  const p = chance(r, day);
-                  return (
-                    <td
-                      key={day}
-                      className="day-cell"
-                      style={p !== null ? { background: shade(p) } : undefined}
-                      title={
-                        d && !whatif
-                          ? `Peak ~${flow(d.peak.p50, r.metric)}` +
-                            (d.p_too_high_all_day >= 0.05 ? ` · ${percent(d.p_too_high_all_day)} too high all day` : "") +
-                            (d.rain_in ? ` · rain through sunset: ${rainRange(d.rain_in)}` : "")
-                          : ""
-                      }
-                    >
-                      {p !== null ? (
-                        <>
-                          <strong>{percent(p)}</strong>
-                          {d && !whatif && <BandBar bands={d.peak_bands} />}
-                        </>
-                      ) : (
-                        <span className="muted">–</span>
+      {favoritesOnly && favorites.size === 0 && (
+        <p className="panel">
+          No favorites yet. Click the <span className="gold">☆</span> next to any reach, here, in All reaches, or on a reach's
+          page, to add it.
+        </p>
+      )}
+      {!(favoritesOnly && favorites.size === 0) && (
+        <>
+          <p className="muted">
+            {matches.length.toLocaleString()} of{" "}
+            {favoritesOnly
+              ? `${(favorites.size - unforecastFavorites).toLocaleString()} forecast favorites`
+              : `${reaches.length.toLocaleString()} forecast reaches`}
+            {matches.length > 0 &&
+              ` · showing ${(current * pageSize + 1).toLocaleString()}–${(current * pageSize + shown.length).toLocaleString()}`}
+          </p>
+          {pages > 1 && pager}
+          <div className="table-scroll">
+            <table className="outlook">
+              <thead>
+                <tr>
+                  <th className="star-col" aria-label="Favorite" />
+                  <SortHeader column="river" label="River" sort={sort} onSort={onSort} />
+                  <SortHeader column="class" label="Class" sort={sort} onSort={onSort} />
+                  <SortHeader column="state" label="State" sort={sort} onSort={onSort} />
+                  <SortHeader
+                    column="runs"
+                    label={<span title="Share of days in range over the last 10 years">Runs</span>}
+                    sort={sort}
+                    onSort={onSort}
+                  />
+                  <th>Now</th>
+                  {data.days.map((day, n) => (
+                    <SortHeader key={day} className="day-col" column={`day:${n}`} label={weekday(day)} sort={sort} onSort={onSort} />
+                  ))}
+                  <SortHeader column="best" label="Best" className="day-col" sort={sort} onSort={onSort} />
+                </tr>
+              </thead>
+              <tbody>
+                {shown.map((r) => (
+                  <tr key={r.id} onClick={() => (location.hash = `#/reach/${r.id}`)}>
+                    <td className="star-col">
+                      <Star id={r.id} favorites={favorites} toggle={toggleFavorite} />
+                    </td>
+                    <td>
+                      <a href={`#/reach/${r.id}`}>{r.river}</a>
+                      {r.range_note && (
+                        <span className="range-warning" title={RANGE_NOTES[r.range_note]}>
+                          {" "}⚠
+                        </span>
+                      )}
+                      <div className="muted small">{sectionLabel(r)}</div>
+                      {r.estimate && (
+                        <div
+                          className="estimate small"
+                          title={`No gauge: estimated from a gauge ${Math.round(r.estimate.distance_km)} km away, scaled to this watershed, with an estimated range`}
+                        >
+                          Estimate
+                        </div>
+                      )}
+                      {r.next_release && data.days.includes(r.next_release) && (
+                        <div className="release small" title="American Whitewater's release calendar; the forecast is the natural flow">
+                          Dam release {weekday(r.next_release)}
+                        </div>
                       )}
                     </td>
-                  );
-                })}
-                <td className="day-cell">
-                  <strong>{percent(best(r))}</strong>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {pages > 1 && pager}
+                    <td className="nowrap">{r.difficulty ? classLabel(r.difficulty) : ""}</td>
+                    <td>{stateCodes(r.states)}</td>
+                    <td className="nowrap muted" title="Share of days in range over the last 10 years">
+                      {r.in_range_share !== null ? percent(r.in_range_share) : ""}
+                    </td>
+                    <td className="nowrap">
+                      {r.estimate && "~"}
+                      {flow(r.now_value, r.metric)}
+                      <div>
+                        <span className="chip small" style={{ background: BAND_COLORS[r.now_band] }}>
+                          {BAND_LABELS[r.now_band]}
+                        </span>
+                      </div>
+                    </td>
+                    {data.days.map((day) => {
+                      const d = r.days.find((x) => x.day === day);
+                      const p = chance(r, day);
+                      return (
+                        <td
+                          key={day}
+                          className="day-cell"
+                          style={p !== null ? { background: shade(p) } : undefined}
+                          title={
+                            d && !whatif
+                              ? `Peak ~${flow(d.peak.p50, r.metric)}` +
+                                (d.p_too_high_all_day >= 0.05 ? ` · ${percent(d.p_too_high_all_day)} too high all day` : "") +
+                                (d.rain_in ? ` · rain through sunset: ${rainRange(d.rain_in)}` : "")
+                              : ""
+                          }
+                        >
+                          {p !== null ? (
+                            <>
+                              <strong>{percent(p)}</strong>
+                              {d && !whatif && <BandBar bands={d.peak_bands} />}
+                            </>
+                          ) : (
+                            <span className="muted">–</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="day-cell">
+                      <strong>{percent(best(r))}</strong>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {pages > 1 && pager}
+        </>
+      )}
       <p className="muted small">
         Bars show where each day's peak lands, too low → too high. Hover a cell for the expected peak and forecast rain. Later
         days are less certain: rain forecasts lose most of their skill after about 3 days.

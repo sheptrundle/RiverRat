@@ -153,6 +153,8 @@ def _estimate(session: Session, data_dir: Path, reach: Reach, now: datetime) -> 
     model = store.range_model(data_dir)
     if basin is None or model is None:
         raise NoForecast("the reach has no gauge")
+    if estimate.snapped_downstream(basin.area_sqmi, basin.putin_area_sqmi):
+        raise NoForecast("the reach has no gauge, and its watershed couldn't be mapped reliably")
     centre = (
         select(func.ST_Centroid(func.Geography(ReachBasin.geom)))
         .where(ReachBasin.reach_id == reach.id)

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from riverrat.forecast.estimate import SPREAD_LEVELS, RangeModel
+from riverrat.forecast.estimate import SPREAD_LEVELS, RangeModel, snapped_downstream
 
 
 def synthetic(n=400, seed=1):
@@ -41,3 +41,11 @@ def test_minimum_falls_back_to_size_alone():
 def test_too_few_reaches():
     area, gradient, low, high = synthetic(n=20)
     assert RangeModel.fit(area, gradient, low, high) is None
+
+
+def test_a_take_out_snapped_onto_the_bigger_river():
+    assert snapped_downstream(1032, 4.0)  # Elsey Run on the Cheat
+    assert snapped_downstream(1211, 112)  # Rutherford Creek on the Duck: big and 11×
+    assert not snapped_downstream(43, 15.7)  # a creek gathering tributaries
+    assert not snapped_downstream(43, None)  # only one end found: nothing to compare
+    assert snapped_downstream(4100, 0.0)

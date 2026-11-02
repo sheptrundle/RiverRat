@@ -11,7 +11,7 @@
 - **Outlook:** every forecast reach's chance of running on each of the next 6 days, with a rain slider that asks "what if every watershed got 1.5 inches tonight?"
 - **What-if:** pick a storm's size, type, and start time for any reach, and see the predicted flow and the past storms behind it.
 - **Track record:** every morning's forecasts are kept and scored against what the rivers did, in public.
-- **Favorites:** star reaches to follow them on their own page.
+- **Favorites:** star reaches, then show only those with "Favorites Only".
 - **Coverage:** about 1,500 reaches from American Whitewater's catalog, about 975 of them forecast through 391 USGS gauges.
 
 ## How it works

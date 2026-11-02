@@ -1,7 +1,8 @@
 // Hand-drawn SVG charts: the What-if hydrograph and the rain-response curve.
+import { useRef, useState } from "react";
 import type { BandName, Bands, DayCurve, WhatIf } from "./api";
 import { BAND_NAMES } from "./api";
-import { HOUR_MS, inches, percent, rainRange } from "./format";
+import { BAND_LABELS, HOUR_MS, flow, inches, percent, rainRange } from "./format";
 
 const W = 900;
 const PAD = { left: 64, right: 16, top: 14, bottom: 30 };
@@ -48,8 +49,12 @@ function path(points: [number, number][]): string {
   return points.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join("");
 }
 
+/** The flow chart, with a cursor to drag (or step with the arrow keys) along it: it reads
+ * out the observed flow, or the forecast's median and 80% range, at that hour. */
 export function Hydrograph({ whatif, height = 320 }: { whatif: WhatIf; height?: number }) {
   const { bands, observed, forecast, storm, days } = whatif;
+  const svg = useRef<SVGSVGElement>(null);
+  const [cursor, setCursor] = useState<number | null>(null); // ms; null: now
   const top = PAD.top;
   const bottom = height - PAD.bottom;
   const obsStart = Date.parse(observed.start);
@@ -87,53 +92,138 @@ export function Hydrograph({ whatif, height = 320 }: { whatif: WhatIf; height?: 
   const stormStart = fcStart + storm.start_h * HOUR_MS;
   const stormEnd = stormStart + storm.duration_h * HOUR_MS;
 
+  // the cursor, snapped to the hour, and what the chart says there
+  const at = Math.min(Math.max(cursor ?? fcStart, t0), t1);
+  const reading = readAt(at);
+  function readAt(t: number) {
+    if (t < fcStart) {
+      const v = observed.values[Math.round((t - obsStart) / HOUR_MS)];
+      return v == null ? null : { kind: "observed" as const, value: v };
+    }
+    const h = Math.min(Math.round((t - fcStart) / HOUR_MS), forecast.p50.length - 1);
+    return { kind: "forecast" as const, value: forecast.p50[h], low: forecast.p10[h], high: forecast.p90[h] };
+  }
+  const band = reading && bandSpans(bands).find(([, a, b]) => reading.value >= a && reading.value < b)?.[0];
+  const snap = (t: number) => t0 + Math.round((t - t0) / HOUR_MS) * HOUR_MS;
+  const moveTo = (clientX: number) => {
+    const box = svg.current?.getBoundingClientRect();
+    if (!box) return;
+    const vx = ((clientX - box.left) / box.width) * W;
+    const t = t0 + ((vx - PAD.left) / (W - PAD.left - PAD.right)) * (t1 - t0);
+    setCursor(snap(Math.min(Math.max(t, t0), t1)));
+  };
+  const step = (e: React.KeyboardEvent) => {
+    const hours = { ArrowLeft: -1, ArrowRight: 1, PageDown: -24, PageUp: 24 }[e.key];
+    if (hours === undefined && e.key !== "Home") return;
+    e.preventDefault();
+    if (e.key === "Home") return setCursor(null);
+    setCursor(snap(Math.min(Math.max(at + hours! * (e.shiftKey ? 6 : 1) * HOUR_MS, t0), t1)));
+  };
+  const cursorX = x(at);
+  const dateTime = new Date(at).toLocaleString(undefined, { weekday: "short", month: "short", day: "numeric", hour: "numeric" });
+
   return (
-    <svg viewBox={`0 0 ${W} ${height}`} className="chart" role="img" aria-label="Flow forecast">
-      {bandSpans(bands).map(([name, a, b]) => {
-        const yTop = clampY(Math.min(b, hi));
-        const yBottom = clampY(Math.max(a, lo));
-        if (a >= hi || b <= lo || yBottom - yTop < 0.5) return null;
-        return (
-          <rect key={name} x={PAD.left} width={W - PAD.left - PAD.right} y={yTop} height={yBottom - yTop} fill={BAND_COLORS[name]} opacity={0.35} />
-        );
-      })}
-      {days.map((d) => (
-        <rect key={d.day} x={x(Date.parse(d.sunrise))} width={x(Date.parse(d.sunset)) - x(Date.parse(d.sunrise))} y={bottom - 5} height={5} fill="var(--daylight)">
-          <title>Daylight</title>
-        </rect>
-      ))}
-      {y.ticks.map((t) => (
-        <g key={t}>
-          <line x1={PAD.left} x2={W - PAD.right} y1={y.map(t)} y2={y.map(t)} className="grid" />
-          <text x={PAD.left - 6} y={y.map(t) + 4} textAnchor="end" className="tick">
-            {bands.metric === "cfs" ? t.toLocaleString() : t}
-          </text>
+    <div className="hydrograph">
+      <div className="readout" aria-live="polite">
+        <strong>{at === fcStart ? `Now, ${dateTime}` : dateTime}</strong>
+        {reading === null ? (
+          <span className="muted">no reading</span>
+        ) : reading.kind === "observed" ? (
+          <span>
+            Observed <strong>{flow(reading.value, bands.metric)}</strong>
+          </span>
+        ) : (
+          <span>
+            Forecast <strong>{flow(reading.value, bands.metric)}</strong>
+            {flow(reading.low, bands.metric) !== flow(reading.high, bands.metric) && (
+                <span className="muted">
+                  {" "}
+                  (80% likely {flow(reading.low, bands.metric)} – {flow(reading.high, bands.metric)})
+                </span>
+              )}
+          </span>
+        )}
+        {band && (
+          <span className="chip small" style={{ background: BAND_COLORS[band] }}>
+            {BAND_LABELS[band]}
+          </span>
+        )}
+        <span className="muted small hint">Drag along the chart to read any hour.</span>
+      </div>
+      <svg
+        ref={svg}
+        viewBox={`0 0 ${W} ${height}`}
+        className="chart scrub"
+        role="slider"
+        tabIndex={0}
+        aria-label="Time on the flow chart"
+        aria-valuemin={t0}
+        aria-valuemax={t1}
+        aria-valuenow={at}
+        aria-valuetext={dateTime}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          moveTo(e.clientX);
+        }}
+        onPointerMove={(e) => {
+          if (e.currentTarget.hasPointerCapture(e.pointerId)) moveTo(e.clientX);
+        }}
+        onKeyDown={step}
+      >
+        {bandSpans(bands).map(([name, a, b]) => {
+          const yTop = clampY(Math.min(b, hi));
+          const yBottom = clampY(Math.max(a, lo));
+          if (a >= hi || b <= lo || yBottom - yTop < 0.5) return null;
+          return (
+            <rect key={name} x={PAD.left} width={W - PAD.left - PAD.right} y={yTop} height={yBottom - yTop} fill={BAND_COLORS[name]} opacity={0.35} />
+          );
+        })}
+        {days.map((d) => (
+          <rect key={d.day} x={x(Date.parse(d.sunrise))} width={x(Date.parse(d.sunset)) - x(Date.parse(d.sunrise))} y={bottom - 5} height={5} fill="var(--daylight)">
+            <title>Daylight</title>
+          </rect>
+        ))}
+        {y.ticks.map((t) => (
+          <g key={t}>
+            <line x1={PAD.left} x2={W - PAD.right} y1={y.map(t)} y2={y.map(t)} className="grid" />
+            <text x={PAD.left - 6} y={y.map(t) + 4} textAnchor="end" className="tick">
+              {bands.metric === "cfs" ? t.toLocaleString() : t}
+            </text>
+          </g>
+        ))}
+        {midnights.map((t) => (
+          <g key={t}>
+            <line x1={x(t)} x2={x(t)} y1={top} y2={bottom} className="grid" />
+            <text x={x(t) + 4} y={bottom + 18} className="tick">
+              {new Date(t).toLocaleDateString(undefined, { weekday: "short", day: "numeric" })}
+            </text>
+          </g>
+        ))}
+        {storm.rain_in > 0 && (
+          <rect x={x(stormStart)} width={Math.max(x(stormEnd) - x(stormStart), 2)} y={top} height={8} fill="var(--rain)">
+            <title>{`${inches(storm.rain_in)} storm`}</title>
+          </rect>
+        )}
+        <path d={path(fan) + "Z"} fill="var(--fan)" />
+        <path d={path(forecast.p50.map((v, h) => [fcX(h), clampY(v)]))} className="median" />
+        {obsSegments.map((seg, i) => (seg.length ? <path key={i} d={path(seg)} className="observed" /> : null))}
+        <line x1={x(fcStart)} x2={x(fcStart)} y1={top} y2={bottom} className="now" />
+        <text x={x(fcStart) + 4} y={top + 22} className="tick">
+          now
+        </text>
+        <text x={14} y={(top + bottom) / 2} transform={`rotate(-90 14 ${(top + bottom) / 2})`} textAnchor="middle" className="tick">
+          {bands.metric}
+        </text>
+        <g className="cursor">
+          {reading?.kind === "forecast" && (
+            <line x1={cursorX} x2={cursorX} y1={clampY(reading.high)} y2={clampY(reading.low)} className="cursor-range" />
+          )}
+          <line x1={cursorX} x2={cursorX} y1={top} y2={bottom} className="cursor-line" />
+          <circle cx={cursorX} cy={top} r={6} className="cursor-handle" />
+          {reading && <circle cx={cursorX} cy={clampY(reading.value)} r={5} className="cursor-dot" />}
         </g>
-      ))}
-      {midnights.map((t) => (
-        <g key={t}>
-          <line x1={x(t)} x2={x(t)} y1={top} y2={bottom} className="grid" />
-          <text x={x(t) + 4} y={bottom + 18} className="tick">
-            {new Date(t).toLocaleDateString(undefined, { weekday: "short", day: "numeric" })}
-          </text>
-        </g>
-      ))}
-      {storm.rain_in > 0 && (
-        <rect x={x(stormStart)} width={Math.max(x(stormEnd) - x(stormStart), 2)} y={top} height={8} fill="var(--rain)">
-          <title>{`${inches(storm.rain_in)} storm`}</title>
-        </rect>
-      )}
-      <path d={path(fan) + "Z"} fill="var(--fan)" />
-      <path d={path(forecast.p50.map((v, h) => [fcX(h), clampY(v)]))} className="median" />
-      {obsSegments.map((seg, i) => (seg.length ? <path key={i} d={path(seg)} className="observed" /> : null))}
-      <line x1={x(fcStart)} x2={x(fcStart)} y1={top} y2={bottom} className="now" />
-      <text x={x(fcStart) + 4} y={top + 22} className="tick">
-        now
-      </text>
-      <text x={14} y={(top + bottom) / 2} transform={`rotate(-90 14 ${(top + bottom) / 2})`} textAnchor="middle" className="tick">
-        {bands.metric}
-      </text>
-    </svg>
+      </svg>
+    </div>
   );
 }
 
