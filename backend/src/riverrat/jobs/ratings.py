@@ -68,7 +68,11 @@ def fit_all(
     fitted = {}
     for gauge_id, site in gauges:
         cfs, ft = (
-            hourly.hourly_flow(_readings(session, data_dir, gauge_id, site, unit, hours), hours)
+            hourly.hourly_flow(
+                _readings(session, data_dir, gauge_id, site, unit, hours),
+                hours,
+                nonnegative=unit == "cfs",
+            )
             for unit in ("cfs", "ft")
         )
         rating = Rating.fit(cfs.astype(float), ft.astype(float))

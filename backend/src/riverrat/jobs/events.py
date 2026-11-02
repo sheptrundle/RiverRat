@@ -121,7 +121,7 @@ def build_hourly(
             readings = pa.concat_tables(
                 [pq.read_table(path) for path in sorted(flow_dirs[site].glob("*.parquet"))]
             )
-            cfs = hourly.hourly_flow(readings, hours)
+            cfs = hourly.hourly_flow(readings, hours, nonnegative=True)
             write_parquet(hourly_path(data_dir, site), hourly.to_table(hours, cfs, mm))
             stats.gauges += 1
         log.info("Hourly tables: %d of %d gauges", stats.gauges, len(with_flow))

@@ -51,14 +51,19 @@ def readings_table(rows) -> pa.Table:
     )
 
 
-def hourly_flow(readings: pa.Table, hours: np.ndarray) -> np.ndarray:
+def hourly_flow(readings: pa.Table, hours: np.ndarray, *, nonnegative: bool = False) -> np.ndarray:
     """Mean of the good readings in each hour (NaN for hours without any). `readings` has
     the USGS history columns (ts, value, qualifier); `hours` are consecutive hour ends.
+    `nonnegative` drops readings below zero: a few gauges publish negative discharge
+    (backwater, index-velocity glitches), which isn't the river's flow. Stage can be.
 
     Averaging copes with the mix of 15-, 30-, and 60-minute recording in older years."""
     flags = (pc.match_substring(readings["qualifier"], q) for q in BAD_QUALIFIERS)
     flagged = pc.fill_null(reduce(pc.or_, flags), False)
-    good = readings.filter(pc.and_(pc.invert(flagged), pc.is_valid(readings["value"])))
+    keep = pc.and_(pc.invert(flagged), pc.is_valid(readings["value"]))
+    if nonnegative:
+        keep = pc.and_(keep, pc.greater_equal(readings["value"], 0))
+    good = readings.filter(keep)
     # Some timestamps carry stray microseconds; whole seconds are plenty.
     micros = good["ts"].cast(pa.timestamp("us", tz="UTC")).cast(pa.int64()).to_numpy()
     seconds = micros // 1_000_000

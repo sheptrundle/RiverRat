@@ -65,6 +65,13 @@ def test_hourly_flow_ignores_readings_outside_the_hours():
     np.testing.assert_array_equal(hourly.hourly_flow(table, hours), [np.nan, 7.0])
 
 
+def test_hourly_flow_can_drop_negative_readings():
+    hours = hourly.hour_ends(T0, at(1))
+    table = readings([(at(0), -40.0, None), (at(1), -2.0, None), (at(1), 6.0, None)])
+    np.testing.assert_array_equal(hourly.hourly_flow(table, hours), [-40.0, 2.0])
+    np.testing.assert_array_equal(hourly.hourly_flow(table, hours, nonnegative=True), [np.nan, 6.0])
+
+
 # --- storms --------------------------------------------------------------------------
 
 

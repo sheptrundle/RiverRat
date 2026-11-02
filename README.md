@@ -12,7 +12,7 @@
 - **What-if slider.** Pick a rain amount, a storm type (3-hour thunderstorm, typical 18-hour storm, or 36-hour soaker), and when it starts. See the river's predicted hydrograph, the chance of running each day, and the past storms behind the forecast.
 - **Rain needed.** For each day, the least rain that gives an even chance of reaching the runnable range, drawn against NOAA's forecast basin rain.
 - **Honest uncertainty.** Every forecast is a weighted set of possible futures, so it shows a range and a probability rather than one line.
-- **1,497 reaches** from the American Whitewater catalog. Those with a usable USGS gauge are forecast through 309 gauges with long enough records. Low, medium, and high bands come from each reach's runnable range. "Runnable" means in range at some point between sunrise and sunset.
+- **1,497 reaches** from the American Whitewater catalog. Those with a usable USGS gauge are forecast through 391 gauges with long enough records. Low, medium, and high bands come from each reach's runnable range. "Runnable" means in range at some point between sunrise and sunset.
 
 ![How much rain a day needs](docs/images/rain-needed.png)
 
@@ -32,15 +32,15 @@ NOAA rain forecast (NBM)     ┘    (flow + watershed rain)     (367,000 storm e
 
 ## Results
 
-Tested on 49,582 storms from 2020–2022 at 309 gauges. The model's library held only storms through 2019, and observed rain stood in for the rain forecast, which isolates how well it predicts the river's response. 2023 onward is held out as a final test set.
+Tested on 61,991 storms from 2020–2022 at 391 gauges. The model's library held only storms through 2019, and observed rain stood in for the rain forecast, which isolates how well it predicts the river's response. 2023 onward is held out as a final test set.
 
 | Model | Forecast error (CRPS, log flow) | Peaks inside the 80% range |
 |---|---|---|
-| Persistence (flow stays where it is) | 0.476 | 1% |
-| Average response of all past storms | 0.304 | 78% |
-| **River Rat analog model** | **0.182** (40% lower) | **80%** |
+| Persistence (flow stays where it is) | 0.481 | 1% |
+| Average response of all past storms | 0.306 | 78% |
+| **River Rat analog model** | **0.185** (40% lower) | **81%** |
 
-The analog model beats the average-response baseline at **every one of the 309 gauges**, with a typical gain of 42%. Its probabilities are calibrated: across ~340,000 reach-days, forecasts of 30%, 50%, 70%, and 97% came true 30%, 51%, 73%, and 97% of the time.
+The analog model beats the average-response baseline at **389 of the 391 gauges**, with a typical gain of 41%; the two exceptions sit just below Philpott Dam, where hydropower releases, not rain, set the flow. Its probabilities are calibrated: across ~390,000 reach-days, forecasts of 30%, 50%, 70%, and 97% came true 30%, 51%, 73%, and 97% of the time.
 
 ## Built with
 

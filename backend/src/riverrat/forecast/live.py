@@ -91,7 +91,9 @@ def _hourly(session: Session, gauge_id: int, param: str, hours: np.ndarray) -> n
             Observation.gauge_id == gauge_id, Observation.param == param, Observation.ts > since
         )
     ).all()
-    return hourly.hourly_flow(hourly.readings_table(rows), hours).astype(float)
+    return hourly.hourly_flow(
+        hourly.readings_table(rows), hours, nonnegative=param == "cfs"
+    ).astype(float)
 
 
 @dataclass(frozen=True)
