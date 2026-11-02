@@ -54,6 +54,7 @@ uv run python -m riverrat.jobs.usgs backfill   # 15-min history since 2002 -> da
 # NOAA forecasts (NWPS keeps no history, so archive every few hours)
 uv run python -m riverrat.jobs.noaa link       # gauges -> NWS location IDs + NWM reaches
 uv run python -m riverrat.jobs.noaa archive    # store new RFC + NWM short-range forecasts
+uv run python -m riverrat.jobs.releases sync   # Army Corps dam releases + release plans (Summersville, Flannagan)
 
 # Watersheds (after usgs sites)
 uv run python -m riverrat.jobs.basins          # NLDI basin polygon per USGS gauge
@@ -100,6 +101,7 @@ The `worker` container (`docker compose up -d worker`) runs recurring jobs from 
 | `noaa-archive` | 3 h | `noaa link`, `noaa archive` |
 | `rain-recent` | 1 h | `rain recent --max-hours 48` (new Stage IV hours, plus revisions from the last 2 days) |
 | `rain-forecast` | 1 h | `rain_forecast archive` (NBM 00/06/12/18Z runs from the last 2 days not yet stored) |
+| `releases` | 1 h | `releases sync` (Army Corps observed releases and release plans; calculated gauges' flow) |
 | `outlook` | 1 h | `outlook` (every reach's 6-day chances from the latest flows and rain forecast -> Postgres reach_outlook) |
 | `track-record` | 1 h | `track_record archive`, `track_record score` (keep the 6 am Outlook; score days that are over) |
 | `ratings` | 1 day | `ratings` (stage ratings for reaches in feet -> data/ratings/ratings.json) |

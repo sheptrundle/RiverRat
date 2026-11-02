@@ -170,6 +170,20 @@ class ReachBasin(Base):
     fetched_at: Mapped[datetime]
 
 
+class DamNotice(Base):
+    """A dam operator's current notice (TVA's lake messages: spills, debris removal,
+    outages), replaced on each sync; no row when the notice is blank."""
+
+    __tablename__ = "dam_notice"
+
+    gauge_id: Mapped[int] = mapped_column(
+        ForeignKey("gauge.id", ondelete="CASCADE"), primary_key=True
+    )
+    since: Mapped[datetime]
+    message: Mapped[str]
+    fetched_at: Mapped[datetime]
+
+
 class BasinRain(Base):
     """Hourly basin-average rain since the end of the AORC history (DESIGN.md §5), from
     the live product. `ts` is the end of the hour; `mm` is None when too little of the
@@ -261,6 +275,8 @@ class ReachOutlook(Base):
     range_max: Mapped[float | None]
     # For a reach without a gauge: {area_sqmi, donor_area_sqmi, distance_km}; else NULL
     estimate = mapped_column(JSONB(none_as_null=True))
+    # For a reach below Army Corps dams: {dams: [names], natural: gauge name or null}
+    release = mapped_column(JSONB(none_as_null=True))
 
 
 class ForecastArchive(Base):

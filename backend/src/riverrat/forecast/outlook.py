@@ -42,6 +42,20 @@ class Ensemble:
     rain_through: datetime | None  # end of the forecast's last period (later hours: dry)
 
 
+def dams_only(state: analog.State) -> Ensemble:
+    """For a reach whose water all comes from dams: one path of no undammed flow, which
+    Target.values adds the dams' planned release to."""
+    return Ensemble(
+        start=state.at,
+        members=np.zeros((1, HOURS + 1)),
+        weights=np.ones(1),
+        scenario=np.zeros(1, int),
+        scenario_rain_mm=np.zeros(1),
+        extrapolated=False,
+        rain_through=None,
+    )
+
+
 def scenario_rain(outlook: RainOutlook | None, start: datetime) -> np.ndarray:
     """Hourly basin rain (mm) for each level: levels × HOURS, where column i is the hour
     ending at start + i + 1 hours. Hours the forecast doesn't cover are dry."""

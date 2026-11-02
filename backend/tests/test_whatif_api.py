@@ -286,7 +286,7 @@ def test_a_dam_release_reach_says_so(client, session):
     session.commit()
     detail = client.get(f"/api/reaches/{reach.id}/whatif").json()["detail"]
     assert '"Gauley at Summersville (cfs)"' in detail
-    assert "dam-controlled" in detail
+    assert "doesn't forecast this dam's flows" in detail
 
 
 def test_ratings_job_fits_history_plus_live_readings(session, tmp_path):

@@ -30,6 +30,16 @@ const SOURCES: { name: string; href: string; use: string }[] = [
     use: "Hourly rain back to 2002, for learning how each river responds to storms.",
   },
   {
+    name: "US Army Corps of Engineers (CWMS)",
+    href: "https://cwms-data.usace.army.mil/cwms-data/",
+    use: "Dam releases and release plans for Summersville and Flannagan, and the Russell Fork at Haysi.",
+  },
+  {
+    name: "Tennessee Valley Authority",
+    href: "https://www.tva.com/environment/lake-levels",
+    use: "Dam releases, release forecasts, and notices for the Ocoee, Hiwassee, and South Holston dams.",
+  },
+  {
     name: "NOAA National Water Prediction Service",
     href: "https://water.noaa.gov",
     use: "River forecast points and their matching USGS gauges.",

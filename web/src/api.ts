@@ -62,10 +62,15 @@ export type Analog = {
 /** A reach without a gauge, estimated from a similar gauge nearby scaled by watershed area. */
 export type Estimate = { area_sqmi: number; donor_area_sqmi: number; distance_km: number };
 
+/** A reach below Army Corps dams: their release plan, plus the undammed part's gauge
+ * (null: the dams set all of the flow). */
+export type Release = { dams: string[]; natural: string | null };
+
 export type WhatIf = {
   reach: ReachInfo;
   gauge: GaugeInfo;
   estimate: Estimate | null;
+  release: Release | null;
   bands: Bands;
   now: Now;
   history: { share_in_range: number; days: number; note: string | null } | null;
@@ -157,6 +162,7 @@ export type OutlookReach = {
   in_range_share: number | null; // share of days in range over the last 10 years
   range_note: string | null; // "above_record" / "below_record": the range looks wrong
   estimate: Estimate | null; // no gauge: estimated through gauge_site
+  release: Release | null; // below Army Corps dams, from their release plans
 };
 export type Outlook = {
   computed_at: string | null;
@@ -190,3 +196,15 @@ export type TrackRecord = {
   reliability: TrackBin[];
   recent: TrackCall[];
 };
+
+// GET /api/reaches/{id}/releases
+export type DamRelease = {
+  name: string;
+  agency: "USACE" | "TVA";
+  now_cfs: number | null;
+  now_at: string | null;
+  recent: Series; // hourly release, cfs, the last 48 hours
+  forecast: { day: string; cfs: number }[]; // the operator's forecast, averaged per day
+  notice: { since: string; message: string } | null;
+};
+export type ReachReleases = { reach: ReachInfo; dams: DamRelease[] };

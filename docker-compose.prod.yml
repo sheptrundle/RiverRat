@@ -46,7 +46,7 @@ services:
     environment:
       <<: *backend-env
       # Ratings need the 20-year history, which stays on the laptop; they come in the bundle.
-      RIVERRAT_JOBS: usgs-live,noaa-archive,rain-recent,rain-forecast,outlook,track-record
+      RIVERRAT_JOBS: usgs-live,noaa-archive,rain-recent,rain-forecast,releases,outlook,track-record
     volumes:
       - ./data:/data:ro
     depends_on:

@@ -36,6 +36,11 @@ class EstimateInfo(BaseModel):
     distance_km: float
 
 
+class ReleaseInfo(BaseModel):
+    dams: list[str]
+    natural: str | None  # the undammed part's gauge (None: the dams set all of the flow)
+
+
 class OutlookReach(BaseModel):
     id: int
     aw_id: int | None
@@ -59,6 +64,7 @@ class OutlookReach(BaseModel):
     in_range_share: float | None  # share of days in range over the last 10 years
     range_note: str | None  # "above_record" / "below_record": the range looks wrong
     estimate: EstimateInfo | None  # no gauge: estimated through gauge_site
+    release: ReleaseInfo | None  # below Army Corps dams, from their release plans
 
 
 class Outlook(BaseModel):
@@ -105,6 +111,7 @@ def get_outlook(session: SessionDep) -> Outlook:
             in_range_share=found.in_range_share,
             range_note=found.range_note,
             estimate=found.estimate,
+            release=found.release,
         )
         for found, reach, site in rows
     ]

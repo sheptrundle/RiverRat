@@ -51,7 +51,7 @@ function path(points: [number, number][]): string {
 
 /** The flow chart, with a cursor to drag (or step with the arrow keys) along it: it reads
  * out the observed flow, or the forecast's median and 80% range, at that hour. */
-export function Hydrograph({ whatif, height = 320 }: { whatif: WhatIf; height?: number }) {
+export function Hydrograph({ whatif, height = 320, showStorm = true }: { whatif: WhatIf; height?: number; showStorm?: boolean }) {
   const { bands, observed, forecast, storm, days } = whatif;
   const svg = useRef<SVGSVGElement>(null);
   const [cursor, setCursor] = useState<number | null>(null); // ms; null: now
@@ -199,7 +199,7 @@ export function Hydrograph({ whatif, height = 320 }: { whatif: WhatIf; height?: 
             </text>
           </g>
         ))}
-        {storm.rain_in > 0 && (
+        {showStorm && storm.rain_in > 0 && (
           <rect x={x(stormStart)} width={Math.max(x(stormEnd) - x(stormStart), 2)} y={top} height={8} fill="var(--rain)">
             <title>{`${inches(storm.rain_in)} storm`}</title>
           </rect>

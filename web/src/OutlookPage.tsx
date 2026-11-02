@@ -236,7 +236,12 @@ export default function OutlookPage() {
                         </span>
                       )}
                       <div className="muted small">{sectionLabel(r)}</div>
-                      {r.estimate && (
+                      {r.release && (
+                    <div className="release small" title={`Army Corps release plan for ${r.release.dams.join(" and ")}`}>
+                      Dam release plan
+                    </div>
+                  )}
+                  {r.estimate && (
                         <div
                           className="estimate small"
                           title={`No gauge: estimated from a gauge ${Math.round(r.estimate.distance_km)} km away, scaled to this watershed, with an estimated range`}

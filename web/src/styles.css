@@ -943,3 +943,55 @@ h2 .star {
   border-color: var(--gold);
   color: #1d2420;
 }
+
+/* dam releases */
+.dam + .dam {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.dam-head {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.dam-notice {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border-left: 4px solid var(--daylight);
+  background: color-mix(in srgb, var(--daylight) 15%, transparent);
+  border-radius: 4px;
+}
+.sparkline {
+  margin: 8px 0;
+}
+.sparkline svg {
+  width: 100%;
+  height: 56px;
+  display: block;
+  background: color-mix(in srgb, var(--line) 35%, transparent);
+  border-radius: 6px;
+}
+.sparkline path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.sparkline-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.dam-forecast {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+}
+.chip-plain {
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  white-space: nowrap;
+}

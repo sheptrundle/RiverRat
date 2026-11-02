@@ -186,6 +186,8 @@ def replay(session: Session, *, data_dir: Path, start: date, end: date) -> int:
                 found = target(session, data_dir, reach, morning)
             except NoForecast:
                 continue
+            if found.release is not None:  # the Corps' past release plans weren't kept
+                continue
             gauge = found.gauge
             if gauge.id not in ensembles:
                 ensembles[gauge.id] = _replay_ensemble(

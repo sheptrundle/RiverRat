@@ -12,20 +12,22 @@ from typing import Annotated, Literal
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from riverrat.config import get_settings
-from riverrat.db.models import Gauge, Reach, ReachGauge
+from riverrat.db.models import DamNotice, Gauge, NoaaForecast, Observation, Reach, ReachGauge
 from riverrat.db.session import get_engine
+from riverrat.features import hourly
 from riverrat.forecast import bands as band_names
-from riverrat.forecast import live, response
+from riverrat.forecast import live, outlook, releases, response
 from riverrat.forecast.bands import Bands
 from riverrat.forecast.daily import Day, daily
 from riverrat.forecast.daylight import sun_times
 from riverrat.forecast.history import range_history
 from riverrat.forecast.target import NoForecast, Target, target
 from riverrat.models import analog
+from riverrat.sources import tva
 
 router = APIRouter(prefix="/api/reaches", tags=["reaches"])
 
@@ -171,10 +173,19 @@ class EstimateOut(BaseModel):
     distance_km: float
 
 
+class ReleaseOut(BaseModel):
+    """A reach below Army Corps dams: their planned release, plus `natural`, the undammed
+    part's gauge, forecast from rain (None: the dams set all of the flow)."""
+
+    dams: list[str]
+    natural: str | None
+
+
 class WhatIf(BaseModel):
     reach: ReachInfo
     gauge: GaugeInfo
     estimate: EstimateOut | None
+    release: ReleaseOut | None
     bands: BandsInfo
     now: Now
     history: History | None
@@ -256,15 +267,16 @@ def _bands_info(bands: Bands) -> BandsInfo:
 
 
 def _now(target: Target) -> Now:
-    state = target.current.state
+    observed = target.observed  # below dams, the reach's own flow, not just the river's
+    state = observed.state
     value = float(target.to_units(state.q))
     return Now(
         at=state.at,
         cfs=state.q,
         value=value,
         band=band_names.NAMES[int(target.bands.classify(value))],
-        ft_observed=target.current.ft,
-        api_mm=state.api_mm,
+        ft_observed=observed.ft,
+        api_mm=target.current.state.api_mm,
         rain_hours=target.current.rain_hours,
     )
 
@@ -285,9 +297,9 @@ def _history(target: Target, data_dir: Path) -> History | None:
 
 
 def _observed(target: Target) -> Series:
-    values = target.to_units(target.current.recent_cfs)
+    values = target.to_units(target.observed.recent_cfs)
     return Series(
-        start=target.current.recent_start,
+        start=target.observed.recent_start,
         values=[float(v) if np.isfinite(v) else None for v in values],
     )
 
@@ -347,7 +359,10 @@ def whatif(
     ends `start_h + 1` hours after the latest reading."""
     target = _target(session, data_dir, reach_id, now)
     state = target.current.state
-    if rain_in > 0:
+    if target.library is None:  # the dams set all of the flow; rain doesn't change it
+        dams = outlook.dams_only(state)
+        forecast = analog.Forecast(dams.start, dams.members, dams.weights, [], False)
+    elif rain_in > 0:
         forecast = target.library.forecast(state, response.storm(rain_in, storm, start_h))
     else:
         forecast = response.no_rain(target.library, state)
@@ -360,6 +375,11 @@ def whatif(
         reach=_reach_info(target.reach),
         gauge=_gauge_info(target),
         estimate=EstimateOut(**vars(target.estimate)) if target.estimate else None,
+        release=(
+            ReleaseOut(dams=list(target.release.dams), natural=target.release.natural)
+            if target.release
+            else None
+        ),
         bands=_bands_info(target.bands),
         now=_now(target),
         history=_history(target, data_dir),
@@ -400,6 +420,8 @@ def rain_response(
     """Chance of running each day and the peak, for every storm size from 0 to 4 in, with
     the NBM forecast's basin total through each day for comparison."""
     target = _target(session, data_dir, reach_id, now)
+    if target.library is None:
+        raise HTTPException(409, "rain doesn't change this reach: its dams' release plan sets it")
     curve = response.rain_response(
         target.library,
         target.current.state,
@@ -442,4 +464,108 @@ def rain_response(
         peak_p90=curve.peak[:, 2].tolist(),
         days=days,
         forecast_issued_at=outlook.issued_at if outlook else None,
+    )
+
+
+# --- dam releases ------------------------------------------------------------------------
+
+
+class NoticeOut(BaseModel):
+    since: datetime
+    message: str
+
+
+class ReleaseDay(BaseModel):
+    day: date  # Eastern
+    cfs: float  # the operator's forecast, averaged over the day
+
+
+class DamRelease(BaseModel):
+    name: str
+    agency: str  # "USACE" (Army Corps) or "TVA"
+    now_cfs: float | None
+    now_at: datetime | None
+    recent: Series  # hourly release, cfs, the last 48 hours
+    forecast: list[ReleaseDay]
+    notice: NoticeOut | None
+
+
+class ReachReleases(BaseModel):
+    reach: ReachInfo
+    dams: list[DamRelease]  # empty: no dam behind the reach that River Rat follows
+
+
+RECENT_HOURS = 48
+
+
+@router.get("/{reach_id}/releases")
+def reach_releases(reach_id: int, session: SessionDep, now: NowDep) -> ReachReleases:
+    """The releases, forecasts, and notices of the dams behind a reach (TVA's or the
+    Army Corps')."""
+    reach = session.get(Reach, reach_id)
+    if reach is None:
+        raise HTTPException(404, "no such reach")
+    gauges = session.execute(
+        select(Gauge.source, Gauge.source_id)
+        .join(ReachGauge, ReachGauge.gauge_id == Gauge.id)
+        .where(ReachGauge.reach_id == reach_id)
+    ).all()
+    dams = []
+    for key in releases.reach_dams(reach.aw_id, [tuple(g) for g in gauges]):
+        dam = releases.DAMS[key]
+        gauge = session.scalar(
+            select(Gauge).where(Gauge.source == dam.agency, Gauge.source_id == dam.source_id)
+        )
+        if gauge is not None:
+            dams.append(_dam_release(session, dam, gauge, now))
+    return ReachReleases(reach=_reach_info(reach), dams=dams)
+
+
+def _dam_release(session: Session, dam: releases.Dam, gauge: Gauge, now: datetime) -> DamRelease:
+    end = hourly.latest_hour(now) + hourly.HOUR
+    hours = hourly.hour_ends(end - (RECENT_HOURS - 1) * hourly.HOUR, end)
+    since = end - RECENT_HOURS * hourly.HOUR
+    rows = session.execute(
+        select(Observation.ts, Observation.value, Observation.qualifier).where(
+            Observation.gauge_id == gauge.id, Observation.param == "cfs", Observation.ts > since
+        )
+    ).all()
+    cfs = hourly.hourly_flow(hourly.readings_table(rows), hours, nonnegative=True)
+    seen = np.flatnonzero(np.isfinite(cfs))
+    now_cfs = now_at = None
+    if len(seen):
+        now_cfs = float(cfs[seen[-1]])
+        now_at = hours[seen[-1]].astype("datetime64[s]").item().replace(tzinfo=UTC)
+
+    issued = session.scalar(
+        select(func.max(NoaaForecast.issued_at)).where(
+            NoaaForecast.gauge_id == gauge.id, NoaaForecast.source == dam.forecast_source
+        )
+    )
+    today = now.astimezone(tva.EASTERN).date()
+    by_day: dict[date, list[float]] = {}
+    if issued is not None:
+        for valid, flow in session.execute(
+            select(NoaaForecast.valid_time, NoaaForecast.flow_cfs).where(
+                NoaaForecast.gauge_id == gauge.id,
+                NoaaForecast.source == dam.forecast_source,
+                NoaaForecast.issued_at == issued,
+                NoaaForecast.flow_cfs.is_not(None),
+            )
+        ):
+            day = valid.astimezone(tva.EASTERN).date()
+            if day >= today:
+                by_day.setdefault(day, []).append(flow)
+    notice = session.get(DamNotice, gauge.id)
+    return DamRelease(
+        name=dam.name,
+        agency=dam.agency,
+        now_cfs=now_cfs,
+        now_at=now_at,
+        recent=Series(
+            start=hours[0].astype("datetime64[s]").item().replace(tzinfo=UTC),
+            values=[float(v) if np.isfinite(v) else None for v in cfs],
+        ),
+        forecast=[ReleaseDay(day=d, cfs=float(np.mean(v))) for d, v in sorted(by_day.items())][:7],
+        notice=NoticeOut(since=notice.since, message=notice.message) if notice else None,
     )

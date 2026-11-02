@@ -1,7 +1,8 @@
 import { useState } from "react";
-import type { RainResponse, StormType, WhatIf } from "./api";
+import type { RainResponse, ReachReleases, StormType, WhatIf } from "./api";
 import { useApi } from "./api";
 import { BAND_COLORS, BandBar, Hydrograph, ResponseCurve } from "./charts";
+import DamReleases from "./DamReleases";
 import { Star, useFavorites } from "./favorites";
 import { sectionLabel } from "./tables";
 import { BAND_LABELS, HOUR_MS, awUrl, classLabel, RANGE_NOTES, rangeLabel, dateLabel, dayLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
@@ -22,21 +23,31 @@ export default function ReachPage({ reachId }: { reachId: number }) {
   const base = `/api/reaches/${reachId}`;
   const whatif = useApi<WhatIf>(`${base}/whatif?rain_in=${rain}&storm=${storm}&start_h=${startH}`, 120);
   const curve = useApi<RainResponse>(`${base}/rain-response?storm=${storm}&start_h=${startH}`, 120);
+  const dams = useApi<ReachReleases>(`${base}/releases`);
   const w = whatif.data;
 
   if (whatif.error && !w) {
+    const reach = dams.data?.reach;
     return (
       <section>
         <p>
           <a href="#/outlook">← Outlook</a>
         </p>
-        <p className="error">No forecast for this reach: {whatif.error}</p>
+        {reach && (
+          <h2>
+            <Star id={reachId} favorites={favorites} toggle={toggleFavorite} /> {reach.river}{" "}
+            <span className="muted">· {sectionLabel(reach)}</span>
+          </h2>
+        )}
+        <p className={dams.data?.dams.length ? "muted" : "error"}>No forecast for this reach: {whatif.error}</p>
+        <DamReleases dams={dams.data?.dams ?? []} />
       </section>
     );
   }
   if (!w) return <p className="muted">Loading forecast…</p>;
 
   const metric = w.bands.metric;
+  const damsOnly = w.release !== null && w.release.natural === null; // rain changes nothing
   const nowMs = Date.parse(w.now.at);
   const stormStart = nowMs + startH * HOUR_MS;
   const rr = curve.data;
@@ -56,7 +67,11 @@ export default function ReachPage({ reachId }: { reachId: number }) {
           </h2>
           <p className="muted">
             {w.reach.difficulty && <>Class {classLabel(w.reach.difficulty)} · </>}
-            {w.estimate ? (
+            {w.release ? (
+              <>
+                Flow: {w.release.dams.join(" + ")} release{w.release.natural && <> + {w.release.natural}</>}
+              </>
+            ) : w.estimate ? (
               <>No gauge: estimated from {w.gauge.name} ({w.gauge.site})</>
             ) : (
               <>
@@ -101,39 +116,56 @@ export default function ReachPage({ reachId }: { reachId: number }) {
           before you go.
         </p>
       )}
-      {w.reach.next_release && (
+      {w.release && (
         <p className="panel release-note">
-          Next scheduled dam release: <strong>{releaseLabel(w.reach.next_release)}</strong> (American Whitewater's calendar). The
-          forecast below is the river's natural flow from rain; on release days the dam sets the flow.
+          <strong>Below the dam.</strong> This forecast uses the Army Corps' own daily plan for{" "}
+          {w.release.dams.join(" and ")}'s release
+          {w.release.natural
+            ? `, plus River Rat's rain forecast for the undammed water measured at ${w.release.natural}.`
+            : ". The dam sets all of the flow here, so rain doesn't change the forecast."}{" "}
+          The Corps can change its plan at short notice: check the day before you go.
         </p>
       )}
+      {w.reach.next_release && (
+        <p className="panel release-note">
+          Next scheduled dam release: <strong>{releaseLabel(w.reach.next_release)}</strong> (American Whitewater's calendar).
+          {!w.release && " The forecast below is the river's natural flow from rain; on release days the dam sets the flow."}
+        </p>
+      )}
+      <DamReleases dams={dams.data?.dams ?? []} />
       <div className="panel">
-        <h3>What if it rains?</h3>
-        <div className="controls">
-          <label>
-            Basin rain <strong>{inches(rain)}</strong>
-            <input type="range" min={0} max={4} step={0.25} value={rain} onChange={(e) => setRain(Number(e.target.value))} />
-          </label>
-          <label>
-            Starting <strong>{timeLabel(stormStart)}</strong>
-            <input type="range" min={0} max={120} step={3} value={startH} onChange={(e) => setStartH(Number(e.target.value))} />
-          </label>
-          <div className="segmented" role="radiogroup" aria-label="Storm type">
-            {STORMS.map((s) => (
-              <button key={s.type} className={s.type === storm ? "on" : ""} title={s.hint} onClick={() => setStorm(s.type)}>
-                {s.label}
-              </button>
-            ))}
+        <h3>{damsOnly ? "Release forecast" : "What if it rains?"}</h3>
+        {!damsOnly && (
+          <div className="controls">
+            <label>
+              Basin rain <strong>{inches(rain)}</strong>
+              <input type="range" min={0} max={4} step={0.25} value={rain} onChange={(e) => setRain(Number(e.target.value))} />
+            </label>
+            <label>
+              Starting <strong>{timeLabel(stormStart)}</strong>
+              <input type="range" min={0} max={120} step={3} value={startH} onChange={(e) => setStartH(Number(e.target.value))} />
+            </label>
+            <div className="segmented" role="radiogroup" aria-label="Storm type">
+              {STORMS.map((s) => (
+                <button key={s.type} className={s.type === storm ? "on" : ""} title={s.hint} onClick={() => setStorm(s.type)}>
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
         {w.extrapolated && (
           <p className="warning">More rain than any similar storm this gauge has seen: treat these numbers as rough.</p>
         )}
 
-        <Hydrograph whatif={w} />
+        <Hydrograph whatif={w} showStorm={!damsOnly} />
         <p className="legend">
-          <span className="key observed" /> observed <span className="key median" /> forecast median{" "}
-          <span className="key fan" /> 80% range <span className="key rain" /> storm{" "}
+          <span className="key observed" /> observed <span className="key median" /> {damsOnly ? "Corps release plan" : "forecast median"}{" "}
+          {!damsOnly && (
+            <>
+              <span className="key fan" /> 80% range <span className="key rain" /> storm{" "}
+            </>
+          )}
           <span className="key daylight" /> daylight
         </p>
 

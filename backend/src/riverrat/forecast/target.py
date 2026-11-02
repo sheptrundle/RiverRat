@@ -6,6 +6,9 @@ reach's USGS gauges stands in, preferring one on the same river. Flows are model
 cfs and reported in the range's units, through the gauge's stage rating for reaches
 rated in feet.
 
+A reach on an AW calculated gauge below Army Corps dams is forecast from the Corps'
+release plans, plus the rain forecast for any undammed part (forecast/releases.py).
+
 A reach with no gauge at all but a mapped watershed (reach_basin) is estimated instead:
 through a similar gauge nearby, scaled by watershed area, against a range estimated from
 the watershed's size and gradient (forecast/estimate.py).
@@ -21,7 +24,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session, aliased
 
 from riverrat.db.models import Basin, Gauge, Reach, ReachBasin, ReachGauge
-from riverrat.forecast import estimate, live
+from riverrat.forecast import estimate, live, releases
 from riverrat.forecast.bands import Bands
 from riverrat.models import analog, store
 
@@ -43,23 +46,38 @@ class Estimate:
 
 
 @dataclass(frozen=True)
+class Release:
+    """A reach below Army Corps dams: their planned release, added to any undammed part."""
+
+    cfs: np.ndarray  # the dams' release, hour 0 at the target's current.state.at
+    dams: tuple[str, ...]  # their names
+    natural: str | None  # the undammed part's gauge, forecast from rain (None: dams only)
+    gauge: Gauge  # AW's calculated gauge: the reach's own flow, observed
+    observed: live.Current  # its readings
+
+
+@dataclass(frozen=True)
 class Target:
     reach: Reach
     gauge: Gauge
     bands: Bands
     lat: float
     lon: float
-    library: analog.AnalogLibrary
+    library: analog.AnalogLibrary | None  # None: a reach below dams with no undammed part
     current: live.Current
     to_units: Callable  # cfs → the range's units
     primary: bool  # False: standing in for AW's primary gauge
     estimate: Estimate | None = None  # a reach without a gauge, through a donor gauge
     # For estimates: factors on flow, one per plausible range, each judged against `bands`
     spread: np.ndarray | None = None
+    release: Release | None = None  # a reach below Army Corps dams
 
     def values(self, members: np.ndarray, weights: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Forecast members (cfs) in the range's units, with their weights. An estimate
-        repeats each member once per plausible range."""
+        repeats each member once per plausible range; below dams, their planned release
+        is added."""
+        if self.release is not None:
+            members = members + self.release.cfs[None, : members.shape[-1]]
         values = self.to_units(members)
         if self.spread is None:
             return values, weights
@@ -67,8 +85,24 @@ class Target:
         values = (values[None] * self.spread[:, None, None]).reshape(-1, values.shape[-1])
         return values, np.tile(weights, n) / n
 
+    @property
+    def observed(self) -> live.Current:
+        """The reach's own recent flow: below dams, AW's calculated gauge."""
+        return self.release.observed if self.release else self.current
+
+    @property
+    def record_gauge(self) -> Gauge:
+        """The gauge whose readings say what the reach did (for the Track record)."""
+        return self.release.gauge if self.release else self.gauge
+
 
 def target(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Target:
+    if reach.aw_id in releases.TVA_REACHES:
+        dam = releases.DAMS[releases.TVA_REACHES[reach.aw_id]]
+        raise NoForecast(
+            f"its flow is set by TVA's {dam.name}, and River Rat can't give a chance of running "
+            "yet (no runnable range or release schedule): see TVA's releases below"
+        )
     # Each linked gauge, or for an NWS location its USGS twin at the same place.
     linked = aliased(Gauge)
     gauge = aliased(Gauge)
@@ -88,6 +122,16 @@ def target(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Tar
         )
         .order_by(ReachGauge.id)
     ).all()
+    # Below Army Corps dams, the reach follows their release plans (forecast/releases.py)
+    for link, linked_gauge in session.execute(
+        select(ReachGauge, Gauge)
+        .join(Gauge, Gauge.id == ReachGauge.gauge_id)
+        .where(ReachGauge.reach_id == reach.id)
+        .order_by(ReachGauge.is_primary.desc(), ReachGauge.id)
+    ):
+        recipe = releases.RECIPES.get((linked_gauge.source, linked_gauge.source_id))
+        if recipe and (recipe.reaches is None or reach.aw_id in recipe.reaches):
+            return _release(session, data_dir, reach, link, linked_gauge, now)
     river = reach.river.lower()
     rows = sorted(rows, key=lambda r: (not r[0].is_primary, river not in r[1].name.lower()))
     problem = "the reach has no USGS gauge with a runnable range"
@@ -96,15 +140,15 @@ def target(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Tar
     ):
         return _estimate(session, data_dir, reach, now)
     if not rows:
-        calculated = session.scalars(
-            select(Gauge.name)
-            .join(ReachGauge, ReachGauge.gauge_id == Gauge.id)
+        found = session.execute(
+            select(ReachGauge, Gauge)
+            .join(Gauge, Gauge.id == ReachGauge.gauge_id)
             .where(ReachGauge.reach_id == reach.id, Gauge.source == "CALCULATED")
         ).first()
-        if calculated:
+        if found:
             problem = (
-                f"its gauge is American Whitewater's calculated \"{calculated}\", usually a dam's "
-                "release; River Rat doesn't forecast dam-controlled flows yet"
+                f'its gauge is American Whitewater\'s calculated "{found[1].name}", usually a '
+                "dam's release; River Rat doesn't forecast this dam's flows yet"
             )
     for link, gauge, lat, lon, area in rows:
         try:
@@ -145,6 +189,56 @@ def target(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Tar
             continue
         return Target(reach, gauge, bands, lat, lon, library, current, to_units, link.is_primary)
     raise NoForecast(problem)
+
+
+def _release(
+    session: Session, data_dir: Path, reach: Reach, link: ReachGauge, calculated: Gauge, now
+) -> Target:
+    """Through the Corps' release plans, plus the rain forecast for any undammed part."""
+    recipe = releases.RECIPES[(calculated.source, calculated.source_id)]
+    dams = [releases.DAMS[key] for key in recipe.dams]
+    try:
+        bands = Bands(link.metric, link.range_min, link.range_max)
+    except ValueError:
+        raise NoForecast("the reach has no runnable range") from None
+    observed = live.current(session, calculated.id, now)
+    if observed is None:
+        raise NoForecast("the dam release readings haven't come in")
+    if recipe.natural:
+        found = session.execute(
+            select(Gauge, Basin.area_sqmi, func.ST_Y(Gauge.geom), func.ST_X(Gauge.geom))
+            .outerjoin(Basin, Basin.gauge_id == Gauge.id)
+            .where(Gauge.source == "USGS", Gauge.source_id == recipe.natural)
+        ).first()
+        if found is None:
+            raise NoForecast(f"gauge {recipe.natural} isn't set up yet")
+        gauge, area, lat, lon = found
+        library = store.library(data_dir, gauge.source_id, area)
+        current = live.current(session, gauge.id, now)
+        if library is None or current is None:
+            raise NoForecast(f"gauge {gauge.source_id} can't be forecast right now")
+    else:
+        gauge, library, current = calculated, None, observed
+        lat, lon = dams[0].lat, dams[0].lon
+    cfs = np.zeros(analog.HORIZON_H + 1)
+    for dam in dams:
+        dam_gauge = session.scalar(
+            select(Gauge.id).where(Gauge.source == "USACE", Gauge.source_id == dam.source_id)
+        )
+        plan = None
+        if dam_gauge is not None:
+            plan = releases.planned(session, dam_gauge, current.state.at, len(cfs))
+        if plan is None:
+            raise NoForecast(f"the Army Corps hasn't published a release forecast for {dam.name}")
+        cfs += plan
+    release = Release(
+        cfs,
+        tuple(dam.name for dam in dams),
+        gauge.name if recipe.natural else None,
+        calculated,
+        observed,
+    )
+    return Target(reach, gauge, bands, lat, lon, library, current, _identity, True, release=release)
 
 
 def _estimate(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Target:

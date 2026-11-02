@@ -75,21 +75,26 @@ def compute(session: Session, *, data_dir: Path, now: datetime) -> OutlookStats:
             stats.skipped[_reason(str(problem))] += 1
             continue
         if found.gauge.id not in ensembles:
-            rain = live.rain_outlook(session, found.gauge.id, now)
-            ensembles[found.gauge.id] = (
-                outlook.ensemble(found.library, found.current.state, rain),
-                rain,
-            )
-            whatifs[found.gauge.id] = response.forecasts(
-                found.library,
-                found.current.state,
-                storm_type=WHATIF_STORM,
-                start_h=_start_h(found.current.state.at, storm_start),
-                rain_in=WHATIF_RAIN_IN,
-            )
+            if found.library is None:  # below dams with no undammed part: their plan
+                ensembles[found.gauge.id] = (outlook.dams_only(found.current.state), None)
+                whatifs[found.gauge.id] = None
+            else:
+                rain = live.rain_outlook(session, found.gauge.id, now)
+                ensembles[found.gauge.id] = (
+                    outlook.ensemble(found.library, found.current.state, rain),
+                    rain,
+                )
+                whatifs[found.gauge.id] = response.forecasts(
+                    found.library,
+                    found.current.state,
+                    storm_type=WHATIF_STORM,
+                    start_h=_start_h(found.current.state.at, storm_start),
+                    rain_in=WHATIF_RAIN_IN,
+                )
         ensemble, rain = ensembles[found.gauge.id]
         row = _row(found, ensemble, rain, now)
-        row.whatif = _whatif(found, whatifs[found.gauge.id], storm_start)
+        if whatifs[found.gauge.id] is not None:
+            row.whatif = _whatif(found, whatifs[found.gauge.id], storm_start)
         history = range_history(found, data_dir)
         if history is not None:
             row.in_range_share, row.range_note = round(history.share_in_range, 3), history.note
@@ -121,11 +126,11 @@ def _row(found: Target, ensemble: outlook.Ensemble, rain, now: datetime) -> Reac
                 "rain_in": rain_in,
             }
         )
-    state = found.current.state
+    state = found.observed.state
     value = float(found.to_units(state.q))
     return ReachOutlook(
         reach_id=found.reach.id,
-        gauge_id=found.gauge.id,
+        gauge_id=found.record_gauge.id,
         primary=found.primary,
         computed_at=now,
         as_of=state.at,
@@ -138,7 +143,14 @@ def _row(found: Target, ensemble: outlook.Ensemble, rain, now: datetime) -> Reac
         range_min=found.bands.minimum,
         range_max=found.bands.maximum,
         estimate=_estimate_info(found),
+        release=_release_info(found),
     )
+
+
+def _release_info(found: Target) -> dict | None:
+    if found.release is None:
+        return None
+    return {"dams": list(found.release.dams), "natural": found.release.natural}
 
 
 def _estimate_info(found: Target) -> dict | None:
