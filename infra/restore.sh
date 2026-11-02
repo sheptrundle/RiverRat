@@ -19,7 +19,9 @@ tar -C data -xf deploy/data.tar
 echo "Restoring the database…"
 "${compose[@]}" stop api worker 2>/dev/null || true
 "${compose[@]}" up -d db
-until "${compose[@]}" exec -T db pg_isready -U "$user" -d "$db" >/dev/null; do sleep 2; done
+# Over TCP: on a fresh volume the image first runs a temporary, socket-only server to
+# initialize the database, then restarts; anything sent to that one is cut off.
+until "${compose[@]}" exec -T db pg_isready -h 127.0.0.1 -U "$user" -d "$db" >/dev/null; do sleep 2; done
 "${compose[@]}" exec -T db psql -U "$user" -d postgres -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" -c "CREATE DATABASE $db"
 "${compose[@]}" exec -T db pg_restore -U "$user" -d "$db" --no-owner --exit-on-error < deploy/riverrat.dump
 
