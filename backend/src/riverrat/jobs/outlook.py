@@ -102,9 +102,9 @@ def compute(session: Session, *, data_dir: Path, now: datetime) -> OutlookStats:
 
 
 def _row(found: Target, ensemble: outlook.Ensemble, rain, now: datetime) -> ReachOutlook:
-    values = found.to_units(ensemble.members)
+    values, weights = found.values(ensemble.members, ensemble.weights)
     days = []
-    for day in daily(values, ensemble.weights, ensemble.start, found.bands, found.lat, found.lon):
+    for day in daily(values, weights, ensemble.start, found.bands, found.lat, found.lon):
         sunset = sun_times(day.day, found.lat, found.lon)[1]
         rain_in = None
         if rain is not None and rain.periods[-1][1] >= sunset:
@@ -135,7 +135,20 @@ def _row(found: Target, ensemble: outlook.Ensemble, rain, now: datetime) -> Reac
         now_band=band_names.NAMES[int(np.asarray(found.bands.classify(value)))],
         extrapolated=ensemble.extrapolated,
         days=days,
+        range_min=found.bands.minimum,
+        range_max=found.bands.maximum,
+        estimate=_estimate_info(found),
     )
+
+
+def _estimate_info(found: Target) -> dict | None:
+    if found.estimate is None:
+        return None
+    return {
+        "area_sqmi": _sig(found.estimate.area_sqmi),
+        "donor_area_sqmi": _sig(found.estimate.donor_area_sqmi),
+        "distance_km": round(found.estimate.distance_km, 1),
+    }
 
 
 def whatif_storm_start(now: datetime) -> datetime:
@@ -158,7 +171,7 @@ def _whatif(found: Target, forecasts: list, storm_start: datetime) -> dict:
         found.bands,
         found.lat,
         found.lon,
-        to_units=found.to_units,
+        values=found.values,
         rain_in=WHATIF_RAIN_IN,
         precomputed=forecasts,
     )

@@ -45,14 +45,19 @@ export function compareClass(a: string | null, b: string | null, sign: number): 
   return sign * (x[0] - y[0] || x[1] - y[1]);
 }
 
-/** Matches every word of the query against river and section. */
-export function matchesQuery(row: { river: string; section: string }, query: string): boolean {
-  const text = `${row.river} ${row.section}`.toLowerCase();
+/** Matches every word of the query against river, section, and nickname ("Upper Gauley"). */
+export function matchesQuery(row: { river: string; section: string; altname: string }, query: string): boolean {
+  const text = `${row.river} ${row.section} ${row.altname}`.toLowerCase();
   return query
     .toLowerCase()
     .split(/\s+/)
     .filter(Boolean)
     .every((w) => text.includes(w));
+}
+
+/** The section, with its nickname when it has one: "Summersville Dam to Woods Ferry (Upper Gauley)". */
+export function sectionLabel(row: { section: string; altname: string }): string {
+  return row.altname ? `${row.section} (${row.altname})` : row.section;
 }
 
 export type Sort<C extends string> = { column: C; descending: boolean };

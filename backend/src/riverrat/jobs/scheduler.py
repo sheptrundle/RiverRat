@@ -37,6 +37,10 @@ JOBS = (
     Job("rain-forecast", (("rain_forecast", "archive"),), timedelta(hours=1)),
     # Every reach's 6-day chances from the latest flows and rain forecast (~1 min).
     Job("outlook", (("outlook",),), timedelta(hours=1)),
+    # Keep each morning's Outlook and score the days that are over (the Track record).
+    Job(
+        "track-record", (("track_record", "archive"), ("track_record", "score")), timedelta(hours=1)
+    ),
     # Stage ratings for reaches in feet, refit as live readings shift the offset.
     Job("ratings", (("ratings",),), timedelta(days=1)),
 )

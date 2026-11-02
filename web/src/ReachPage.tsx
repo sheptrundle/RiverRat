@@ -2,6 +2,8 @@ import { useState } from "react";
 import type { RainResponse, StormType, WhatIf } from "./api";
 import { useApi } from "./api";
 import { BAND_COLORS, BandBar, Hydrograph, ResponseCurve } from "./charts";
+import { Star, useFavorites } from "./favorites";
+import { sectionLabel } from "./tables";
 import { BAND_LABELS, HOUR_MS, awUrl, classLabel, RANGE_NOTES, rangeLabel, dateLabel, dayLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
 
 const STORMS: { type: StormType; label: string; hint: string }[] = [
@@ -15,6 +17,7 @@ export default function ReachPage({ reachId }: { reachId: number }) {
   const [storm, setStorm] = useState<StormType>("typical");
   const [startH, setStartH] = useState(12);
   const [dayIndex, setDayIndex] = useState<number | null>(null);
+  const [favorites, toggleFavorite] = useFavorites();
 
   const base = `/api/reaches/${reachId}`;
   const whatif = useApi<WhatIf>(`${base}/whatif?rain_in=${rain}&storm=${storm}&start_h=${startH}`, 120);
@@ -25,7 +28,7 @@ export default function ReachPage({ reachId }: { reachId: number }) {
     return (
       <section>
         <p>
-          <a href="#/">← Outlook</a>
+          <a href="#/outlook">← Outlook</a>
         </p>
         <p className="error">No forecast for this reach: {whatif.error}</p>
       </section>
@@ -44,17 +47,23 @@ export default function ReachPage({ reachId }: { reachId: number }) {
   return (
     <section className={whatif.loading ? "reach loading" : "reach"}>
       <p>
-        <a href="#/">← Outlook</a>
+        <a href="#/outlook">← Outlook</a>
       </p>
       <header className="reach-header">
         <div>
           <h2>
-            {w.reach.river} <span className="muted">· {w.reach.section}</span>
+            <Star id={reachId} favorites={favorites} toggle={toggleFavorite} /> {w.reach.river} <span className="muted">· {sectionLabel(w.reach)}</span>
           </h2>
           <p className="muted">
             {w.reach.difficulty && <>Class {classLabel(w.reach.difficulty)} · </>}
-            Gauge: {w.gauge.name} ({w.gauge.site})
-            {!w.gauge.primary && <> (standing in for AW's primary gauge, with AW's range for it)</>}
+            {w.estimate ? (
+              <>No gauge: estimated from {w.gauge.name} ({w.gauge.site})</>
+            ) : (
+              <>
+                Gauge: {w.gauge.name} ({w.gauge.site})
+                {!w.gauge.primary && <> (standing in for AW's primary gauge, with AW's range for it)</>}
+              </>
+            )}
             {w.reach.aw_id && (
               <>
                 {" · "}
@@ -82,6 +91,22 @@ export default function ReachPage({ reachId }: { reachId: number }) {
       </header>
 
       {w.history?.note && <p className="warning">{RANGE_NOTES[w.history.note]}</p>}
+      {w.estimate && (
+        <p className="panel estimate-note">
+          <strong>Estimate.</strong> This reach has no gauge. Its flow is {w.gauge.name}'s, {Math.round(w.estimate.distance_km)}{" "}
+          km away, scaled from that gauge's {Math.round(w.estimate.donor_area_sqmi)} mi² watershed to this reach's{" "}
+          {Math.round(w.estimate.area_sqmi)} mi². The runnable range of about{" "}
+          {rangeLabel(w.bands.minimum, w.bands.maximum, w.bands.metric)} is estimated from watershed size and gradient, and
+          real ranges often differ by 2× either way, so the chances below are spread to match. Treat it as a hint and check
+          before you go.
+        </p>
+      )}
+      {w.reach.next_release && (
+        <p className="panel release-note">
+          Next scheduled dam release: <strong>{releaseLabel(w.reach.next_release)}</strong> (American Whitewater's calendar). The
+          forecast below is the river's natural flow from rain; on release days the dam sets the flow.
+        </p>
+      )}
       <div className="panel">
         <h3>What if it rains?</h3>
         <div className="controls">
@@ -186,4 +211,15 @@ export default function ReachPage({ reachId }: { reachId: number }) {
       )}
     </section>
   );
+}
+
+/** "Thu, Sep 16, 2027": a release can be months away. */
+function releaseLabel(day: string): string {
+  return new Date(`${day}T12:00:00Z`).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }

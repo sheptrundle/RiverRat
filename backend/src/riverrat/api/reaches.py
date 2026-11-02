@@ -61,7 +61,9 @@ class ReachSummary(BaseModel):
     aw_id: int | None
     river: str
     section: str
+    altname: str  # e.g. "Upper Gauley"; may be empty
     difficulty: str | None
+    next_release: date | None
     states: list[str]
     gauge_site: str | None  # the primary gauge
     metric: str | None
@@ -74,7 +76,9 @@ class ReachInfo(BaseModel):
     aw_id: int | None
     river: str
     section: str
+    altname: str
     difficulty: str | None
+    next_release: date | None  # AW's next scheduled dam release
 
 
 class GaugeInfo(BaseModel):
@@ -158,9 +162,19 @@ class AnalogOut(BaseModel):
     weight: float
 
 
+class EstimateOut(BaseModel):
+    """A reach without a gauge, estimated through `gauge`: a similar gauge nearby whose
+    flow is scaled by watershed area, judged against an estimated range."""
+
+    area_sqmi: float
+    donor_area_sqmi: float
+    distance_km: float
+
+
 class WhatIf(BaseModel):
     reach: ReachInfo
     gauge: GaugeInfo
+    estimate: EstimateOut | None
     bands: BandsInfo
     now: Now
     history: History | None
@@ -221,7 +235,9 @@ def _reach_info(reach: Reach) -> ReachInfo:
         aw_id=reach.aw_id,
         river=reach.river,
         section=reach.section,
+        altname=reach.altname,
         difficulty=reach.difficulty_raw,
+        next_release=reach.next_release,
     )
 
 
@@ -335,14 +351,15 @@ def whatif(
         forecast = target.library.forecast(state, response.storm(rain_in, storm, start_h))
     else:
         forecast = response.no_rain(target.library, state)
-    values = target.to_units(forecast.members)
+    values, weights = target.values(forecast.members, forecast.weights)
     fan = np.stack(
-        [analog.weighted_quantile(column, forecast.weights, LEVELS) for column in values.T], axis=1
+        [analog.weighted_quantile(column, weights, LEVELS) for column in values.T], axis=1
     )
-    days = daily(values, forecast.weights, forecast.start, target.bands, target.lat, target.lon)
+    days = daily(values, weights, forecast.start, target.bands, target.lat, target.lon)
     return WhatIf(
         reach=_reach_info(target.reach),
         gauge=_gauge_info(target),
+        estimate=EstimateOut(**vars(target.estimate)) if target.estimate else None,
         bands=_bands_info(target.bands),
         now=_now(target),
         history=_history(target, data_dir),
@@ -391,7 +408,7 @@ def rain_response(
         target.lon,
         storm_type=storm,
         start_h=start_h,
-        to_units=target.to_units,
+        values=target.values,
     )
     outlook = live.rain_outlook(session, target.gauge.id, now)
     days = []

@@ -104,9 +104,11 @@ class RainOutlook:
 
 
 def rain_outlook(session: Session, gauge_id: int, now: datetime) -> RainOutlook | None:
-    """The latest stored NBM run's 6-hour basin totals still ahead of `now`."""
+    """The latest NBM run issued by `now`: its 6-hour basin totals still ahead of `now`."""
     issued = session.scalar(
-        select(func.max(RainForecastRun.issued_at)).where(RainForecastRun.source == NBM)
+        select(func.max(RainForecastRun.issued_at)).where(
+            RainForecastRun.source == NBM, RainForecastRun.issued_at <= now
+        )
     )
     if issued is None:
         return None

@@ -13,7 +13,7 @@ db=${POSTGRES_DB:-riverrat}
 
 echo "Unpacking model data…"
 mkdir -p data
-rm -rf data/hourly data/events data/ratings
+rm -rf data/hourly data/events data/ratings data/estimates
 tar -C data -xf deploy/data.tar
 
 echo "Restoring the database…"

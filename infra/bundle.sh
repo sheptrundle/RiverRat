@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # On the laptop: pack what the server needs into deploy-bundle/ (infra/DEPLOY.md).
 #   riverrat.dump  the database (catalog, gauges, basins, recent readings and rain, archives)
-#   data.tar       per-gauge storm libraries and ratings (data/hourly, data/events, data/ratings)
+#   data.tar       per-gauge storm libraries, ratings, and the range model for reaches without
+#                  a gauge (data/hourly, data/events, data/ratings, data/estimates)
 # Rebuild the training tables first (README: events hourly / extract, ratings) if the
 # history changed.
 set -euo pipefail
@@ -15,7 +16,7 @@ echo "Dumping the database…"
 docker compose exec -T db pg_dump -U "$user" -d "$db" --format=custom --no-owner > "$out/riverrat.dump"
 
 echo "Packing model data…"
-tar -C data/ -cf "$out/data.tar" hourly events ratings
+tar -C data/ -cf "$out/data.tar" hourly events ratings estimates
 
 (cd "$out" && shasum -a 256 riverrat.dump data.tar > SHA256SUMS)
 du -sh "$out"/riverrat.dump "$out"/data.tar

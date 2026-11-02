@@ -72,6 +72,15 @@ uv run python -m riverrat.jobs.hindcast analog # 2020-22 storms -> data/skill/{a
 
 # Stage ratings for reaches in feet (the worker refits daily)
 uv run python -m riverrat.jobs.ratings         # -> data/ratings/ratings.json
+
+# Reaches without a gauge: their watersheds, then the range model that estimates them
+uv run python -m riverrat.jobs.reach_basins    # NLDI watershed above each take-out -> Postgres reach_basin
+uv run python -m riverrat.jobs.estimates       # -> data/estimates/range_model.json
+
+# Track record: keep each morning's Outlook and score finished days (the worker does both hourly)
+uv run python -m riverrat.jobs.track_record archive
+uv run python -m riverrat.jobs.track_record score
+uv run python -m riverrat.jobs.track_record replay --start 2026-10-19 --end 2026-11-02  # mornings before archiving began
 ```
 
 Long backfills can run in a container so they survive closing the terminal:
@@ -92,6 +101,7 @@ The `worker` container (`docker compose up -d worker`) runs recurring jobs from 
 | `rain-recent` | 1 h | `rain recent --max-hours 48` (new Stage IV hours, plus revisions from the last 2 days) |
 | `rain-forecast` | 1 h | `rain_forecast archive` (NBM 00/06/12/18Z runs from the last 2 days not yet stored) |
 | `outlook` | 1 h | `outlook` (every reach's 6-day chances from the latest flows and rain forecast -> Postgres reach_outlook) |
+| `track-record` | 1 h | `track_record archive`, `track_record score` (keep the 6 am Outlook; score days that are over) |
 | `ratings` | 1 day | `ratings` (stage ratings for reaches in feet -> data/ratings/ratings.json) |
 
 After changing backend code, rebuild with `docker compose up -d --build worker`.

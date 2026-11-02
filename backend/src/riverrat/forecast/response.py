@@ -111,25 +111,26 @@ def rain_response(
     *,
     storm_type: str = "typical",
     start_h: int = 0,
-    to_units=None,
+    values=None,
     rain_in=RAIN_IN,
     precomputed: list[analog.Forecast] | None = None,
 ) -> Response:
-    """`to_units` converts forecast cfs into the bands' units (a rating's `to_ft` for
-    reaches rated in feet). `precomputed` are `forecasts(...)` for the same arguments."""
+    """`values(members, weights)` converts forecast cfs into the bands' units with their
+    weights (Target.values: a rating's `to_ft` for reaches rated in feet, an estimate's
+    scaling). `precomputed` are `forecasts(...)` for the same arguments."""
     rain_in = np.asarray(rain_in, float)
-    convert = to_units or (lambda cfs: cfs)
+    convert = values or (lambda members, weights: (members, weights))
     if precomputed is None:
         precomputed = forecasts(
             library, state, storm_type=storm_type, start_h=start_h, rain_in=rain_in
         )
     peaks, reach, too_high, day_list = [], [], [], None
     for forecast in precomputed:
-        values = convert(forecast.members)
-        days = daily(values, forecast.weights, forecast.start, bands, lat, lon)
+        flows, weights = convert(forecast.members, forecast.weights)
+        days = daily(flows, weights, forecast.start, bands, lat, lon)
         day_list = day_list or [d.day for d in days]
-        peak = values.max(axis=1)
-        peaks.append(analog.weighted_quantile(peak, forecast.weights, [0.1, 0.5, 0.9]))
+        peak = flows.max(axis=1)
+        peaks.append(analog.weighted_quantile(peak, weights, [0.1, 0.5, 0.9]))
         reach.append([1 - d.peak_bands["too_low"] for d in days])
         too_high.append([d.p_too_high_all_day for d in days])
 

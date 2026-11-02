@@ -1,15 +1,31 @@
 import { useMemo, useState } from "react";
 import type { ReachSummary } from "./api";
 import { useApi } from "./api";
+import { Star, useFavorites } from "./favorites";
 import { classLabel, rangeLabel } from "./format";
 import type { Sort } from "./tables";
-import { PAGE_SIZES, Pager, SortHeader, allStates, compareClass, matchesQuery, paged, stateCodes } from "./tables";
+import {
+  PAGE_SIZES,
+  Pager,
+  SortHeader,
+  allStates,
+  compareClass,
+  matchesQuery,
+  paged,
+  sectionLabel,
+  stateCodes,
+} from "./tables";
 
 type Column = "river" | "section" | "class" | "state";
 
 /** Every reach in the catalog, forecastable or not. */
 export default function ReachList() {
   const { data, error } = useApi<ReachSummary[]>("/api/reaches");
+  const [favorites, toggleFavorite] = useFavorites();
+  // a link can open it filtered: #/reaches?favorites=1
+  const [favoritesOnly, setFavoritesOnly] = useState(
+    () => new URLSearchParams(location.hash.split("?")[1]).get("favorites") === "1",
+  );
   const [query, setQuery] = useState("");
   const [state, setState] = useState("");
   const [sort, setSort] = useState<Sort<Column>>({ column: "river", descending: false });
@@ -18,7 +34,8 @@ export default function ReachList() {
 
   const states = useMemo(() => allStates(data ?? []), [data]);
   const matches = useMemo(() => {
-    const found = (data ?? []).filter((r) => matchesQuery(r, query) && (!state || stateCodes(r.states).includes(state)));
+    const found = (data ?? []).filter(
+      (r) => (!favoritesOnly || favorites.has(r.id)) && matchesQuery(r, query) && (!state || stateCodes(r.states).includes(state)));
     const sign = sort.descending ? -1 : 1;
     const byColumn = (a: ReachSummary, b: ReachSummary) => {
       switch (sort.column) {
@@ -36,7 +53,7 @@ export default function ReachList() {
       (a, b) =>
         byColumn(a, b) || a.river.localeCompare(b.river) || a.section.localeCompare(b.section, undefined, { numeric: true }),
     );
-  }, [data, query, state, sort]);
+  }, [data, query, state, sort, favoritesOnly, favorites]);
 
   const { pages, current, shown } = paged(matches, page, pageSize);
   const onSort = (column: Column) => {
@@ -82,6 +99,17 @@ export default function ReachList() {
             <option key={s}>{s}</option>
           ))}
         </select>
+        <label className="toggle">
+          <input
+            type="checkbox"
+            checked={favoritesOnly}
+            onChange={(e) => {
+              setFavoritesOnly(e.target.checked);
+              setPage(0);
+            }}
+          />{" "}
+          <span className="gold">★</span> Favorites only
+        </label>
       </div>
       {error && <p className="error">Couldn't load reaches: {error}</p>}
       {!data && !error && <p className="muted">Loading reaches…</p>}
@@ -96,6 +124,7 @@ export default function ReachList() {
           <table className="reaches">
             <thead>
               <tr>
+                <th className="star-col" aria-label="Favorite" />
                 <SortHeader column="river" label="River" sort={sort} onSort={onSort} />
                 <SortHeader column="section" label="Section" sort={sort} onSort={onSort} />
                 <SortHeader column="class" label="Class" sort={sort} onSort={onSort} />
@@ -106,10 +135,13 @@ export default function ReachList() {
             <tbody>
               {shown.map((r) => (
                 <tr key={r.id} onClick={() => (location.hash = `#/reach/${r.id}`)}>
+                  <td className="star-col">
+                    <Star id={r.id} favorites={favorites} toggle={toggleFavorite} />
+                  </td>
                   <td>
                     <a href={`#/reach/${r.id}`}>{r.river}</a>
                   </td>
-                  <td>{r.section}</td>
+                  <td>{sectionLabel(r)}</td>
                   <td className="nowrap">{r.difficulty ? classLabel(r.difficulty) : ""}</td>
                   <td>{stateCodes(r.states)}</td>
                   <td className="nowrap">

@@ -12,16 +12,19 @@ from sqlalchemy import func
 from riverrat.api import reaches
 from riverrat.api.main import app
 from riverrat.db.models import (
+    Basin,
     BasinRain,
     Gauge,
     Observation,
     RainForecast,
     RainForecastRun,
     Reach,
+    ReachBasin,
     ReachGauge,
 )
 from riverrat.features import hourly
 from riverrat.forecast import live
+from riverrat.forecast.estimate import RangeModel, range_model_path
 from riverrat.forecast.rating import Rating
 from riverrat.jobs import events as event_jobs
 from riverrat.jobs import ratings as rating_jobs
@@ -274,6 +277,18 @@ def test_reaches_that_cant_be_forecast(client, session):
     assert detail == f"gauge {SITE} stopped reporting flow in 2025 (USGS discontinued it)"
 
 
+def test_a_dam_release_reach_says_so(client, session):
+    reach = Reach(river="Gauley", section="Summersville Dam to Woods Ferry", states=["USA-WVR"])
+    dam = Gauge(source="CALCULATED", source_id="1", name="Gauley at Summersville (cfs)")
+    session.add_all([reach, dam])
+    session.flush()
+    session.add(ReachGauge(reach_id=reach.id, gauge_id=dam.id, is_primary=True, metric="cfs"))
+    session.commit()
+    detail = client.get(f"/api/reaches/{reach.id}/whatif").json()["detail"]
+    assert '"Gauley at Summersville (cfs)"' in detail
+    assert "dam-controlled" in detail
+
+
 def test_ratings_job_fits_history_plus_live_readings(session, tmp_path):
     add_reach(session, metric="ft", low=1.0, high=3.0, readings=False)
     gauge_id = session.query(Gauge.id).scalar()
@@ -331,7 +346,7 @@ def test_outlook_job_and_endpoint(client, session, lake):
     assert client.get("/api/outlook").json()["computed_at"] is None
     stats = outlook_jobs.compute(session, data_dir=lake, now=NOW)
     assert (stats.reaches, stats.gauges) == (1, 1)
-    assert stats.skipped == {"the reach has no USGS gauge with a runnable range": 1}
+    assert stats.skipped == {"the reach has no gauge": 1}
     assert outlook_jobs._reason("gauge 0123 stopped reporting flow in 2009 (x)") == (
         "stopped reporting flow in YYYY (x)"
     )
@@ -372,3 +387,93 @@ def test_range_history_and_ranges_that_look_wrong(client, session):
     session.commit()
     history = client.get(f"/api/reaches/{reach_id}/whatif").json()["history"]
     assert (history["share_in_range"], history["note"]) == (0.0, "below_record")
+
+
+# --- reaches without a gauge -----------------------------------------------------------
+
+
+def square_wkt(lon, lat, size=0.1):
+    x, y = lon + size, lat + size
+    return f"MULTIPOLYGON((({lon} {lat},{x} {lat},{x} {y},{lon} {y},{lon} {lat})))"
+
+
+@pytest.fixture
+def range_model(lake):
+    """Bottom of the range 2 cfs per mi², top 8× that, give or take 25%."""
+    path = range_model_path(lake)
+    spread = tuple(np.log(np.linspace(0.75, 1.25, 10)))
+    model = RangeModel(
+        area=(np.log(2.0), 1.0),
+        area_gradient=(np.log(2.0), 1.0, 0.0),
+        spread_area=spread,
+        spread_area_gradient=spread,
+        ratio=8.0,
+        reaches=500,
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(model.to_dict()))
+    yield model
+    path.unlink()
+
+
+def add_ungauged(session, area=200.0, donor_area=100.0):
+    """The synthetic creek's gauge with a basin, and a creek with none 10 km away."""
+    add_reach(session)
+    gauge = session.query(Gauge).one()
+    session.add(
+        Basin(
+            gauge_id=gauge.id,
+            geom=func.ST_GeomFromText(square_wkt(-81.2, 38.0), 4326),
+            area_sqmi=donor_area,
+            source="nldi",
+            fetched_at=NOW,
+        )
+    )
+    creek = Reach(river="No Gauge Creek", section="Falls", states=["USA-WVR"])
+    session.add(creek)
+    session.flush()
+    session.add(
+        ReachBasin(
+            reach_id=creek.id,
+            comid=1,
+            geom=func.ST_GeomFromText(square_wkt(-81.09, 38.0), 4326),
+            area_sqmi=area,
+            fetched_at=NOW,
+        )
+    )
+    session.commit()
+    return creek.id
+
+
+def test_a_reach_without_a_gauge_is_estimated_from_a_similar_one(client, session, range_model):
+    creek_id = add_ungauged(session, area=200.0, donor_area=100.0)
+    body = client.get(f"/api/reaches/{creek_id}/whatif?rain_in=1").json()
+    assert body["gauge"]["site"] == SITE
+    assert body["estimate"]["area_sqmi"] == 200.0
+    assert 5 < body["estimate"]["distance_km"] < 15
+    # 2 cfs per mi² to 8× that; the donor's flow doubled
+    assert (body["bands"]["minimum"], body["bands"]["maximum"]) == pytest.approx((400, 3200))
+    assert body["now"]["value"] == pytest.approx(2 * BASE)
+    assert body["history"] is None
+    assert client.get(f"/api/reaches/{creek_id}/rain-response").status_code == 200
+
+
+def test_estimates_reach_the_outlook(client, session, lake, range_model):
+    from riverrat.jobs import outlook as outlook_jobs
+
+    creek_id = add_ungauged(session)
+    stats = outlook_jobs.compute(session, data_dir=lake, now=NOW)
+    assert (stats.reaches, stats.gauges) == (2, 1)
+    reaches = {r["id"]: r for r in client.get("/api/outlook").json()["reaches"]}
+    assert len(reaches) == 2
+    creek = reaches[creek_id]
+    assert creek["estimate"]["donor_area_sqmi"] == 100.0
+    assert (creek["range_min"], creek["range_max"]) == pytest.approx((400, 3200))
+    gauged = next(r for r in reaches.values() if r["id"] != creek_id)
+    assert gauged["estimate"] is None and gauged["range_min"] == 150.0
+
+
+def test_no_similar_gauge_nearby(client, session, range_model):
+    creek_id = add_ungauged(session, area=200.0, donor_area=5.0)  # 40× smaller
+    detail = client.get(f"/api/reaches/{creek_id}/whatif").json()["detail"]
+    assert detail.startswith("the reach has no gauge, and no similar gauge within")

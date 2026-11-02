@@ -152,6 +152,24 @@ class Basin(Base):
     fetched_at: Mapped[datetime]
 
 
+class ReachBasin(Base):
+    """The watershed above a reach's take-out, for reaches without a gauge, which are
+    estimated from a similar nearby gauge. Found by snapping points just inside each end
+    of the reach line to NHDPlus; the end with the larger watershed is the take-out.
+    `putin_area_sqmi` is the other end's, a check on the snapping."""
+
+    __tablename__ = "reach_basin"
+
+    reach_id: Mapped[int] = mapped_column(
+        ForeignKey("reach.id", ondelete="CASCADE"), primary_key=True
+    )
+    comid: Mapped[int] = mapped_column(BigInteger)
+    geom = mapped_column(Geometry("MULTIPOLYGON", srid=4326, spatial_index=False), nullable=False)
+    area_sqmi: Mapped[float]
+    putin_area_sqmi: Mapped[float | None]
+    fetched_at: Mapped[datetime]
+
+
 class BasinRain(Base):
     """Hourly basin-average rain since the end of the AORC history (DESIGN.md §5), from
     the live product. `ts` is the end of the hour; `mm` is None when too little of the
@@ -238,3 +256,36 @@ class ReachOutlook(Base):
     # range looks wrong for the gauge: "above_record" or "below_record".
     in_range_share: Mapped[float | None]
     range_note: Mapped[str | None] = mapped_column(String(16))
+    # The range the reach was judged by (AW's, or an estimate's)
+    range_min: Mapped[float | None]
+    range_max: Mapped[float | None]
+    # For a reach without a gauge: {area_sqmi, donor_area_sqmi, distance_km}; else NULL
+    estimate = mapped_column(JSONB(none_as_null=True))
+
+
+class ForecastArchive(Base):
+    """Each morning's chance of running for each forecast reach and day ahead, kept and
+    scored once the day is over (jobs/track_record.py): `observed` is whether the gauge
+    was in range during daylight; None until scored, and still None once `scored_at` is
+    set if too few readings came in. `persistence` is the baseline: the reach's band when
+    the forecast was made, held. `replay` marks forecasts recomputed afterwards from what
+    was known then (the archived rain forecast and readings), before archiving began."""
+
+    __tablename__ = "forecast_archive"
+    __table_args__ = (Index("ix_forecast_archive_day", "day"),)
+
+    reach_id: Mapped[int] = mapped_column(
+        ForeignKey("reach.id", ondelete="CASCADE"), primary_key=True
+    )
+    issued_at: Mapped[datetime] = mapped_column(primary_key=True)
+    day: Mapped[date] = mapped_column(primary_key=True)
+    lead_days: Mapped[int]
+    gauge_id: Mapped[int] = mapped_column(ForeignKey("gauge.id", ondelete="CASCADE"))
+    metric: Mapped[str] = mapped_column(String(8))
+    range_min: Mapped[float | None]
+    range_max: Mapped[float | None]
+    p_runnable: Mapped[float]
+    persistence: Mapped[bool]
+    replay: Mapped[bool] = mapped_column(default=False, server_default="false")
+    observed: Mapped[bool | None]
+    scored_at: Mapped[datetime | None]

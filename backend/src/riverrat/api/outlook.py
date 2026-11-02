@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 
 from riverrat.api.reaches import Peak, RainRange, SessionDep
-from riverrat.db.models import Gauge, Reach, ReachGauge, ReachOutlook
+from riverrat.db.models import Gauge, Reach, ReachOutlook
 
 router = APIRouter(prefix="/api/outlook", tags=["outlook"])
 
@@ -28,12 +28,22 @@ class WhatIfDay(BaseModel):
     p_runnable: list[float]  # per amount in Outlook.whatif_rain_in
 
 
+class EstimateInfo(BaseModel):
+    """A reach without a gauge, estimated from a similar gauge nearby (gauge_site)."""
+
+    area_sqmi: float  # the reach's watershed
+    donor_area_sqmi: float
+    distance_km: float
+
+
 class OutlookReach(BaseModel):
     id: int
     aw_id: int | None
     river: str
     section: str
+    altname: str
     difficulty: str | None
+    next_release: date | None  # AW's next scheduled dam release
     states: list[str]
     gauge_site: str
     primary: bool  # False: a stand-in for AW's primary gauge
@@ -48,6 +58,7 @@ class OutlookReach(BaseModel):
     whatif: list[WhatIfDay] | None  # if every basin got each of Outlook.whatif_rain_in
     in_range_share: float | None  # share of days in range over the last 10 years
     range_note: str | None  # "above_record" / "below_record": the range looks wrong
+    estimate: EstimateInfo | None  # no gauge: estimated through gauge_site
 
 
 class Outlook(BaseModel):
@@ -64,14 +75,9 @@ class Outlook(BaseModel):
 @router.get("")
 def get_outlook(session: SessionDep) -> Outlook:
     rows = session.execute(
-        select(ReachOutlook, Reach, Gauge.source_id, ReachGauge.range_min, ReachGauge.range_max)
+        select(ReachOutlook, Reach, Gauge.source_id)
         .join(Reach, Reach.id == ReachOutlook.reach_id)
         .join(Gauge, Gauge.id == ReachOutlook.gauge_id)
-        .join(
-            ReachGauge,
-            (ReachGauge.reach_id == ReachOutlook.reach_id)
-            & (ReachGauge.gauge_id == ReachOutlook.gauge_id),
-        )
         .order_by(Reach.river, Reach.section)
     ).all()
     whatif = next((r[0].whatif for r in rows if r[0].whatif), None)
@@ -81,13 +87,15 @@ def get_outlook(session: SessionDep) -> Outlook:
             aw_id=reach.aw_id,
             river=reach.river,
             section=reach.section,
+            altname=reach.altname,
             difficulty=reach.difficulty_raw,
+            next_release=reach.next_release,
             states=reach.states,
             gauge_site=site,
             primary=found.primary,
             metric=found.metric,
-            range_min=low,
-            range_max=high,
+            range_min=found.range_min,
+            range_max=found.range_max,
             now_value=found.now_value,
             now_band=found.now_band,
             as_of=found.as_of,
@@ -96,8 +104,9 @@ def get_outlook(session: SessionDep) -> Outlook:
             whatif=found.whatif["days"] if found.whatif else None,
             in_range_share=found.in_range_share,
             range_note=found.range_note,
+            estimate=found.estimate,
         )
-        for found, reach, site, low, high in rows
+        for found, reach, site in rows
     ]
     return Outlook(
         computed_at=max((r[0].computed_at for r in rows), default=None),

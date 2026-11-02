@@ -79,10 +79,10 @@ The first build takes a few minutes. Then open `http://<public-ip>/`. The worker
 | Code (git push) | On the server: `git pull && docker compose -f docker-compose.prod.yml up -d --build` |
 | Training data (rebuilt hourly tables, events, ratings, catalog) | On the laptop `infra/bundle.sh` + rsync, then on the server `infra/restore.sh` |
 
-`restore.sh` replaces the server's database with the laptop's. Archives the server collected since the last bundle (NBM rain forecasts, NOAA flow forecasts) are lost unless you first copy them back to the laptop. Do that before re-bundling once those archives matter for hindcasts:
+`restore.sh` replaces the server's database with the laptop's. Archives the server collected since the last bundle (NBM rain forecasts, NOAA flow forecasts, the Track record's kept forecasts) are lost unless you first copy them back to the laptop. Do that before re-bundling once those archives matter for hindcasts:
 
 ```sh
-ssh ubuntu@<public-ip> 'cd RiverRat && docker compose -f docker-compose.prod.yml exec -T db pg_dump -U riverrat -d riverrat --data-only -t rain_forecast -t rain_forecast_run -t noaa_forecast --format=custom' > server-archives.dump
+ssh ubuntu@<public-ip> 'cd RiverRat && docker compose -f docker-compose.prod.yml exec -T db pg_dump -U riverrat -d riverrat --data-only -t rain_forecast -t rain_forecast_run -t noaa_forecast -t forecast_archive --format=custom' > server-archives.dump
 ```
 
 ## Operations

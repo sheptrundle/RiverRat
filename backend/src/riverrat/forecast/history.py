@@ -31,6 +31,9 @@ class RangeHistory:
 
 
 def range_history(found: Target, data_dir: Path) -> RangeHistory | None:
+    """None for an estimate: its range is a guess, so its history would be too."""
+    if found.estimate is not None:
+        return None
     daily = store.daily_range(data_dir, found.gauge.source_id)
     if daily is None or len(daily[0]) < MIN_DAYS:
         return None

@@ -2,9 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import type { Outlook, OutlookReach } from "./api";
 import { useApi } from "./api";
 import { BAND_COLORS, BandBar } from "./charts";
+import { Star, useFavorites } from "./favorites";
 import { BAND_LABELS, RANGE_NOTES, classLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
 import type { Sort } from "./tables";
-import { PAGE_SIZES, Pager, SortHeader, allStates, compareClass, matchesQuery, paged, stateCodes } from "./tables";
+import {
+  PAGE_SIZES,
+  Pager,
+  SortHeader,
+  allStates,
+  compareClass,
+  matchesQuery,
+  paged,
+  sectionLabel,
+  stateCodes,
+} from "./tables";
 
 // "best" = the highest chance over the days shown; "day:N" = day N's chance.
 type Column = "best" | "river" | "class" | "state" | "runs" | `day:${number}`;
@@ -19,11 +30,14 @@ function shade(p: number): string {
   return `color-mix(in srgb, var(--band-medium) ${Math.round(p * 70)}%, transparent)`;
 }
 
-export default function OutlookPage() {
+/** The Outlook for every forecast reach, or with `favoritesOnly`, the starred ones. */
+export default function OutlookPage({ favoritesOnly = false }: { favoritesOnly?: boolean }) {
   const { data, error } = useApi<Outlook>("/api/outlook");
+  const [favorites, toggleFavorite] = useFavorites();
   const [query, setQuery] = useState("");
   const [state, setState] = useState("");
   const [minChance, setMinChance] = useState(0);
+  const [withEstimates, setWithEstimates] = useState(true);
   const [sort, setSort] = useState<Sort<Column>>({ column: "best", descending: true });
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
@@ -45,7 +59,12 @@ export default function OutlookPage() {
   const best = (r: OutlookReach) => Math.max(0, ...days.map((day) => chance(r, day) ?? 0));
   const matches = useMemo(() => {
     const found = reaches.filter(
-      (r) => matchesQuery(r, query) && (!state || stateCodes(r.states).includes(state)) && best(r) >= minChance,
+      (r) =>
+        (!favoritesOnly || favorites.has(r.id)) &&
+        matchesQuery(r, query) &&
+        (!state || stateCodes(r.states).includes(state)) &&
+        best(r) >= minChance &&
+        (withEstimates || !r.estimate),
     );
     const sign = sort.descending ? -1 : 1;
     const byColumn = (a: OutlookReach, b: OutlookReach): number => {
@@ -61,7 +80,7 @@ export default function OutlookPage() {
       (a, b) =>
         byColumn(a, b) || a.river.localeCompare(b.river) || a.section.localeCompare(b.section, undefined, { numeric: true }),
     );
-  }, [reaches, days, query, state, minChance, sort, rainIndex]);
+  }, [reaches, days, query, state, minChance, withEstimates, sort, rainIndex, favoritesOnly, favorites]);
 
   if (error) return <p className="error">Couldn't load the Outlook: {error}</p>;
   if (!data) return <p className="muted">Loading the Outlook…</p>;
@@ -70,6 +89,19 @@ export default function OutlookPage() {
       <p className="muted">
         The Outlook hasn't been computed yet. It runs hourly in the worker (<code>python -m riverrat.jobs.outlook</code>).
       </p>
+    );
+
+  if (favoritesOnly && favorites.size === 0)
+    return (
+      <section>
+        <h2>
+          <span className="gold">★</span> Favorites
+        </h2>
+        <p className="panel">
+          No favorites yet. Click the <span className="gold">☆</span> next to any reach, in the <a href="#/outlook">Outlook</a>, in{" "}
+          <a href="#/reaches">All reaches</a>, or on a reach's page, and it shows up here with its forecast.
+        </p>
+      </section>
     );
 
   const { pages, current, shown } = paged(matches, page, pageSize);
@@ -91,10 +123,19 @@ export default function OutlookPage() {
   const dry = reaches.every((r) => r.days.every((d) => !d.rain_in || d.rain_in.p90 < 0.05));
   const whatif = rainIndex > 0;
   const stormStart = data.whatif_storm_start ? Date.parse(data.whatif_storm_start) : null;
+  const forecastIds = new Set(reaches.map((r) => r.id));
+  const unforecastFavorites = [...favorites].filter((id) => !forecastIds.has(id)).length;
 
   return (
     <section>
-      <h2>Outlook</h2>
+      <h2>{favoritesOnly ? <><span className="gold">★</span> Favorites</> : "Outlook"}</h2>
+      {favoritesOnly && unforecastFavorites > 0 && (
+        <p className="muted small">
+          {unforecastFavorites} {unforecastFavorites === 1 ? "favorite has" : "favorites have"} no forecast, so{" "}
+          {unforecastFavorites === 1 ? "it isn't" : "they aren't"} listed; find {unforecastFavorites === 1 ? "it" : "them"} in{" "}
+          <a href="#/reaches?favorites=1">All reaches</a>.
+        </p>
+      )}
       <p className="muted">
         Chance each reach is in its runnable range at some point during daylight. Updated {timeLabel(Date.parse(data.computed_at))}
         {data.rain_issued_at && ` from NOAA's ${timeLabel(Date.parse(data.rain_issued_at))} rain forecast`}.
@@ -145,9 +186,20 @@ export default function OutlookPage() {
             </option>
           ))}
         </select>
+        <label className="toggle" title="Reaches without a gauge, estimated from a similar gauge nearby">
+          <input
+            type="checkbox"
+            checked={withEstimates}
+            onChange={(e) => resetting(setWithEstimates)(e.target.checked)}
+          />{" "}
+          Include estimates
+        </label>
       </div>
       <p className="muted">
-        {matches.length.toLocaleString()} of {reaches.length.toLocaleString()} forecast reaches
+        {matches.length.toLocaleString()} of{" "}
+        {favoritesOnly
+          ? `${(favorites.size - unforecastFavorites).toLocaleString()} forecast favorites`
+          : `${reaches.length.toLocaleString()} forecast reaches`}
         {matches.length > 0 &&
           ` · showing ${(current * pageSize + 1).toLocaleString()}–${(current * pageSize + shown.length).toLocaleString()}`}
       </p>
@@ -156,6 +208,7 @@ export default function OutlookPage() {
         <table className="outlook">
           <thead>
             <tr>
+              <th className="star-col" aria-label="Favorite" />
               <SortHeader column="river" label="River" sort={sort} onSort={onSort} />
               <SortHeader column="class" label="Class" sort={sort} onSort={onSort} />
               <SortHeader column="state" label="State" sort={sort} onSort={onSort} />
@@ -175,6 +228,9 @@ export default function OutlookPage() {
           <tbody>
             {shown.map((r) => (
               <tr key={r.id} onClick={() => (location.hash = `#/reach/${r.id}`)}>
+                <td className="star-col">
+                  <Star id={r.id} favorites={favorites} toggle={toggleFavorite} />
+                </td>
                 <td>
                   <a href={`#/reach/${r.id}`}>{r.river}</a>
                   {r.range_note && (
@@ -182,7 +238,20 @@ export default function OutlookPage() {
                       {" "}⚠
                     </span>
                   )}
-                  <div className="muted small">{r.section}</div>
+                  <div className="muted small">{sectionLabel(r)}</div>
+                  {r.estimate && (
+                    <div
+                      className="estimate small"
+                      title={`No gauge: estimated from a gauge ${Math.round(r.estimate.distance_km)} km away, scaled to this watershed, with an estimated range`}
+                    >
+                      Estimate
+                    </div>
+                  )}
+                  {r.next_release && data.days.includes(r.next_release) && (
+                    <div className="release small" title="American Whitewater's release calendar; the forecast is the natural flow">
+                      Dam release {weekday(r.next_release)}
+                    </div>
+                  )}
                 </td>
                 <td className="nowrap">{r.difficulty ? classLabel(r.difficulty) : ""}</td>
                 <td>{stateCodes(r.states)}</td>
@@ -190,6 +259,7 @@ export default function OutlookPage() {
                   {r.in_range_share !== null ? percent(r.in_range_share) : ""}
                 </td>
                 <td className="nowrap">
+                  {r.estimate && "~"}
                   {flow(r.now_value, r.metric)}
                   <div>
                     <span className="chip small" style={{ background: BAND_COLORS[r.now_band] }}>

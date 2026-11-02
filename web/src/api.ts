@@ -10,7 +10,9 @@ export type ReachSummary = {
   aw_id: number | null;
   river: string;
   section: string;
+  altname: string;
   difficulty: string | null;
+  next_release: string | null; // AW's next scheduled dam release, YYYY-MM-DD
   states: string[];
   gauge_site: string | null;
   metric: string | null;
@@ -18,7 +20,7 @@ export type ReachSummary = {
   range_max: number | null;
 };
 
-export type ReachInfo = Pick<ReachSummary, "id" | "aw_id" | "river" | "section" | "difficulty">;
+export type ReachInfo = Pick<ReachSummary, "id" | "aw_id" | "river" | "section" | "altname" | "difficulty" | "next_release">;
 export type GaugeInfo = { id: number; site: string; name: string; primary: boolean };
 export type Bands = {
   metric: "cfs" | "ft";
@@ -57,9 +59,13 @@ export type Analog = {
   t_peak_h: number;
   weight: number;
 };
+/** A reach without a gauge, estimated from a similar gauge nearby scaled by watershed area. */
+export type Estimate = { area_sqmi: number; donor_area_sqmi: number; distance_km: number };
+
 export type WhatIf = {
   reach: ReachInfo;
   gauge: GaugeInfo;
+  estimate: Estimate | null;
   bands: Bands;
   now: Now;
   history: { share_in_range: number; days: number; note: string | null } | null;
@@ -133,7 +139,9 @@ export type OutlookReach = {
   aw_id: number | null;
   river: string;
   section: string;
+  altname: string;
   difficulty: string | null;
+  next_release: string | null;
   states: string[];
   gauge_site: string;
   primary: boolean;
@@ -148,6 +156,7 @@ export type OutlookReach = {
   whatif: { day: string; p_runnable: number[] }[] | null; // per amount in Outlook.whatif_rain_in
   in_range_share: number | null; // share of days in range over the last 10 years
   range_note: string | null; // "above_record" / "below_record": the range looks wrong
+  estimate: Estimate | null; // no gauge: estimated through gauge_site
 };
 export type Outlook = {
   computed_at: string | null;
@@ -156,4 +165,28 @@ export type Outlook = {
   whatif_storm_start: string | null;
   whatif_rain_in: number[];
   reaches: OutlookReach[];
+};
+
+// GET /api/track-record
+export type TrackLead = { lead_days: number; n: number; brier: number; brier_persistence: number; skill: number | null };
+export type TrackBin = { low: number; high: number; n: number; said: number; ran: number };
+export type TrackCall = {
+  day: string;
+  issued_at: string;
+  reach_id: number;
+  river: string;
+  section: string;
+  altname: string;
+  p_runnable: number;
+  observed: boolean;
+};
+export type TrackRecord = {
+  first_day: string | null;
+  last_day: string | null;
+  scored: number;
+  replayed: number;
+  base_rate: number | null;
+  leads: TrackLead[];
+  reliability: TrackBin[];
+  recent: TrackCall[];
 };
