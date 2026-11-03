@@ -38,7 +38,6 @@ export default function OutlookPage() {
   const [query, setQuery] = useState("");
   const [state, setState] = useState("");
   const [minChance, setMinChance] = useState(0);
-  const [withEstimates, setWithEstimates] = useState(true);
   const [sort, setSort] = useState<Sort<Column>>({ column: "best", descending: true });
   const [page, setPage] = useState(0);
   const [pageSize, setPageSize] = useState(PAGE_SIZES[0]);
@@ -64,8 +63,7 @@ export default function OutlookPage() {
         (!favoritesOnly || favorites.has(r.id)) &&
         matchesQuery(r, query) &&
         (!state || stateCodes(r.states).includes(state)) &&
-        best(r) >= minChance &&
-        (withEstimates || !r.estimate),
+        best(r) >= minChance,
     );
     const sign = sort.descending ? -1 : 1;
     const byColumn = (a: OutlookReach, b: OutlookReach): number => {
@@ -81,7 +79,7 @@ export default function OutlookPage() {
       (a, b) =>
         byColumn(a, b) || a.river.localeCompare(b.river) || a.section.localeCompare(b.section, undefined, { numeric: true }),
     );
-  }, [reaches, days, query, state, minChance, withEstimates, sort, rainIndex, favoritesOnly, favorites]);
+  }, [reaches, days, query, state, minChance, sort, rainIndex, favoritesOnly, favorites]);
 
   if (error) return <p className="error">Couldn't load the Outlook: {error}</p>;
   if (!data) return <p className="muted">Loading the Outlook…</p>;
@@ -174,14 +172,6 @@ export default function OutlookPage() {
             </option>
           ))}
         </select>
-        <label className="toggle" title="Reaches without a gauge, estimated from a similar gauge nearby">
-          <input
-            type="checkbox"
-            checked={withEstimates}
-            onChange={(e) => resetting(setWithEstimates)(e.target.checked)}
-          />{" "}
-          Include estimates
-        </label>
         <FavoritesToggle on={favoritesOnly} onChange={resetting(setFavoritesOnly)} />
       </div>
       {favoritesOnly && favorites.size === 0 && (

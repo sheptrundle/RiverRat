@@ -4,6 +4,8 @@ import { useApi } from "./api";
 import { dayLabel, percent } from "./format";
 import { sectionLabel } from "./tables";
 
+// The day-before calls list (hits and misses) is hidden for now; flip to bring it back.
+const SHOW_RECENT_CALLS = false;
 const LEAD_LABELS = ["That day", "1 day ahead", "2 days", "3 days", "4 days", "5 days"];
 
 /** How the Outlook's chances have held up against what the rivers did. */
@@ -93,44 +95,46 @@ export default function TrackRecordPage() {
             </div>
           </div>
 
-          <div className="panel">
-            <div className="calls-header">
-              <h3>Recent calls, made the day before</h3>
-              <div className="segmented" role="radiogroup" aria-label="Calls">
-                {(["all", "hits", "misses"] as const).map((c) => (
-                  <button key={c} className={c === calls ? "on" : ""} onClick={() => setCalls(c)}>
-                    {c[0].toUpperCase() + c.slice(1)}
-                  </button>
-                ))}
+          {SHOW_RECENT_CALLS && (
+            <div className="panel">
+              <div className="calls-header">
+                <h3>Recent calls, made the day before</h3>
+                <div className="segmented" role="radiogroup" aria-label="Calls">
+                  {(["all", "hits", "misses"] as const).map((c) => (
+                    <button key={c} className={c === calls ? "on" : ""} onClick={() => setCalls(c)}>
+                      {c[0].toUpperCase() + c.slice(1)}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-            <p className="muted small">Reaches we gave at least 50%, and every reach that ran, over the last scored days.</p>
-            <table className="calls">
-              <thead>
-                <tr>
-                  <th>Day</th>
-                  <th>Reach</th>
-                  <th>We said</th>
-                  <th>It</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shownCalls.map((c) => (
-                  <tr key={`${c.reach_id}-${c.day}`} onClick={() => (location.hash = `#/reach/${c.reach_id}`)}>
-                    <td className="nowrap">{dayLabel(c.day)}</td>
-                    <td>
-                      <a href={`#/reach/${c.reach_id}`}>{c.river}</a>
-                      <div className="muted small">{sectionLabel(c)}</div>
-                    </td>
-                    <td className="nowrap">{percent(c.p_runnable)}</td>
-                    <td className={hit(c.p_runnable, c.observed) ? "hit nowrap" : "miss nowrap"}>
-                      {c.observed ? "ran" : "didn't"} {hit(c.p_runnable, c.observed) ? "✓" : "✗"}
-                    </td>
+              <p className="muted small">Reaches we gave at least 50%, and every reach that ran, over the last scored days.</p>
+              <table className="calls">
+                <thead>
+                  <tr>
+                    <th>Day</th>
+                    <th>Reach</th>
+                    <th>We said</th>
+                    <th>It</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {shownCalls.map((c) => (
+                    <tr key={`${c.reach_id}-${c.day}`} onClick={() => (location.hash = `#/reach/${c.reach_id}`)}>
+                      <td className="nowrap">{dayLabel(c.day)}</td>
+                      <td>
+                        <a href={`#/reach/${c.reach_id}`}>{c.river}</a>
+                        <div className="muted small">{sectionLabel(c)}</div>
+                      </td>
+                      <td className="nowrap">{percent(c.p_runnable)}</td>
+                      <td className={hit(c.p_runnable, c.observed) ? "hit nowrap" : "miss nowrap"}>
+                        {c.observed ? "ran" : "didn't"} {hit(c.p_runnable, c.observed) ? "✓" : "✗"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
     </section>

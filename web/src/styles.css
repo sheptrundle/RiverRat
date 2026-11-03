@@ -96,6 +96,17 @@ h3 {
   margin: 0;
 }
 
+.logo {
+  display: inline-flex;
+  margin-right: -4px;
+}
+
+.logo img {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+
 /* menu button and sidebar */
 .menu-button {
   width: 40px;

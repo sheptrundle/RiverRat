@@ -70,6 +70,9 @@ export default function App() {
   return (
     <>
       <header className="top">
+        <a href="#/" className="logo" aria-label="River Rat home">
+          <img src="/favicon.svg" alt="" width={40} height={40} />
+        </a>
         <MenuButton
           label={menuOpen ? "Close menu" : "Open menu"}
           expanded={menuOpen}
