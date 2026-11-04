@@ -64,16 +64,18 @@ export type Estimate = { area_sqmi: number; donor_area_sqmi: number; distance_km
 
 /** A reach below dams: their release plan, plus the undammed part's gauge (null: the dams
  * set all of the flow). basis: the Army Corps' hourly plan, TVA's daily plan for a peaking
- * powerhouse, or TVA's recreation release calendar. */
-export type Release = { dams: string[]; natural: string | null; basis: "plan" | "tva" | "schedule" };
+ * powerhouse, TVA's recreation release calendar, or (no published plan) the dam holding its
+ * recent pattern. */
+export type Release = { dams: string[]; natural: string | null; basis: "plan" | "tva" | "schedule" | "held" };
 
 /** What a reach's dam forecast is built from, in a few words. */
-export const RELEASE_TAG = { plan: "Dam release plan", tva: "TVA release plan", schedule: "Release schedule" };
+export const RELEASE_TAG = { plan: "Dam release plan", tva: "TVA release plan", schedule: "Release schedule", held: "Dam pattern" };
 
 export function releaseSource(release: Release): string {
   const dams = release.dams.join(" and ");
   if (release.basis === "tva") return `TVA's daily release plan for ${dams}`;
   if (release.basis === "schedule") return `TVA's recreation release calendar for ${dams}`;
+  if (release.basis === "held") return `${dams} publishes no release plan: its recent pattern, with the chance it changes`;
   return `Army Corps release plan for ${dams}`;
 }
 

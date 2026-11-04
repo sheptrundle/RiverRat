@@ -9,7 +9,7 @@ import { BAND_LABELS, HOUR_MS, awUrl, classLabel, RANGE_NOTES, rangeLabel, dateL
 
 // Kept in step with releases.SCHEDULE_KEPT in the backend
 const SCHEDULE_KEPT = 0.95;
-const DAMS_ONLY_LINE = { plan: "Corps release plan", tva: "TVA plan (typical placement)", schedule: "release schedule" };
+const DAMS_ONLY_LINE = { plan: "Corps release plan", tva: "TVA plan (typical placement)", schedule: "release schedule", held: "dam holds its pattern" };
 
 const STORMS: { type: StormType; label: string; hint: string }[] = [
   { type: "burst", label: "Burst", hint: "3 h thunderstorm" },
@@ -138,6 +138,15 @@ export default function ReachPage({ reachId }: { reachId: number }) {
           plan is held). American Whitewater gives no range here, so River Rat counts {w.bands.minimum?.toLocaleString()}{" "}
           cfs and up (one generator) as running. TVA can change its plan at short notice: check its schedule the day
           before you go.
+        </p>
+      )}
+      {w.release?.basis === "held" && (
+        <p className="panel release-note">
+          <strong>Below the dam.</strong> {w.release.dams.join(" and ")} publishes no release plan online, and its release,
+          not rain, sets the flow here: it runs for weeks or months at one steady level, then switches. So this forecast
+          assumes the dam keeps its last day's pattern, with the chance it switches by each day measured from its record
+          since 2021. On past mornings this beat River Rat's rain model at every lead. A change can come with no warning:
+          check the gauge the morning you go.
         </p>
       )}
       {w.release?.basis === "schedule" && (

@@ -63,7 +63,9 @@ class Release:
     path_weights: np.ndarray | None = None
     natural_scale: float = 1.0  # on the undammed part's forecast
     natural_lag_h: int = 0  # hours from the undammed part's gauge to the reach's
-    basis: str = "plan"  # "plan": the Corps' hourly plan; "tva": TVA's daily; "schedule"
+    # "plan": the Corps' hourly plan; "tva": TVA's daily; "schedule": TVA's calendar;
+    # "held": no plan, the dam holding its pattern or switching state
+    basis: str = "plan"
 
     def add_to(self, members: np.ndarray, weights: np.ndarray):
         """Each undammed-flow member plus each release path, with combined weights."""
@@ -151,9 +153,12 @@ def target(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Tar
         .where(ReachGauge.reach_id == reach.id)
         .order_by(ReachGauge.is_primary.desc(), ReachGauge.id)
     ):
-        recipe = releases.RECIPES.get((linked_gauge.source, linked_gauge.source_id))
+        key = (linked_gauge.source, linked_gauge.source_id)
+        recipe = releases.RECIPES.get(key)
         if recipe and (recipe.reaches is None or reach.aw_id in recipe.reaches):
             return _release(session, data_dir, reach, link, linked_gauge, now)
+        if key in releases.HELD:
+            return _held(session, reach, link, linked_gauge, releases.HELD[key], now)
     river = reach.river.lower()
     rows = sorted(rows, key=lambda r: (not r[0].is_primary, river not in r[1].name.lower()))
     problem = "the reach has no USGS gauge with a runnable range"
@@ -279,6 +284,38 @@ def _release(
         natural_lag_h=recipe.natural_lag_h,
     )
     return Target(reach, gauge, bands, lat, lon, library, current, to_units, True, release=release)
+
+
+def _held(
+    session: Session, reach: Reach, link: ReachGauge, gauge: Gauge, dam: releases.Held, now
+) -> Target:
+    """Below a dam with no published plan: it holds its pattern, or switches state."""
+    try:
+        bands = Bands(link.metric, link.range_min, link.range_max)
+    except ValueError:
+        raise NoForecast("the reach has no runnable range") from None
+    if link.metric != "cfs":
+        raise NoForecast("the reach's range isn't in cfs")
+    observed = live.current(session, gauge.id, now)
+    if observed is None:
+        raise NoForecast(f"gauge {gauge.source_id} has no reading in the last 48 hours")
+    q = observed.state.q
+    low = bands.minimum if bands.minimum is not None else -np.inf
+    inside = low <= q <= (bands.maximum if bands.maximum is not None else np.inf)
+    profile = observed.recent_cfs[-24:].copy()
+    profile[~np.isfinite(profile)] = q
+    cfs, weights = releases.held(
+        profile,
+        dam.out_cfs if inside else dam.in_cfs,
+        dam.leave if inside else dam.enter,
+        observed.state.at,
+        analog.HORIZON_H + 1,
+    )
+    lat, lon = session.execute(
+        select(func.ST_Y(Gauge.geom), func.ST_X(Gauge.geom)).where(Gauge.id == gauge.id)
+    ).one()
+    release = Release(cfs, (dam.dam,), None, gauge, observed, path_weights=weights, basis="held")
+    return Target(reach, gauge, bands, lat, lon, None, observed, _identity, True, release=release)
 
 
 def _tva(session: Session, reach: Reach, tva: releases.TvaReach, now: datetime) -> Target:

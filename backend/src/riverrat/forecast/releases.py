@@ -25,6 +25,15 @@ spreads that many hours across the day (TvaReach). The Ocoee's riverbeds run on 
 recreation calendar instead (the dams' discharge is mostly the flumes'), so those reaches
 follow the published schedule. The Hiwassee Dries run only when Apalachia spills, which
 nothing published forecasts.
+
+Some dams publish no plan at all (Philpott's is a phone recording). Below Philpott, the
+Smith runs in long steady states, ~250 cfs for months and ~80 cfs for months, switching a
+few times a year whatever the rain (the lake takes it), so the forecast is the dam
+holding its last day's pattern, with the measured chance it switches by each day (Held).
+Replayed on 2025–26 mornings, plain persistence beat the rain model, even given the rain
+that fell, at every lead (Brier 0.007 vs 0.011 today, 0.075 vs 0.092 five days out); the
+switch chances, fit leaving each year out in turn, match or beat plain persistence at
+every lead over 2021–26 (0.016 vs 0.016 today, 0.098 vs 0.102 five days out).
 """
 
 from dataclasses import dataclass
@@ -191,6 +200,33 @@ TVA_REACHES = {
     ),
     1753: TvaReach("south_holston", (1000, 10000), unit_cfs=1480),  # Holston below the dam
 }
+
+
+@dataclass(frozen=True)
+class Held:
+    """A gauge just below a dam with no published plan that runs in long steady states:
+    the dam holds its last day's pattern or switches to the other state."""
+
+    dam: str  # its name
+    # The chance the state has switched by each day ahead (0 = today), fit on 2021–26
+    # daily runnability: leaving the range from inside it, and coming in from outside
+    leave: tuple[float, ...]
+    enter: tuple[float, ...]
+    in_cfs: float  # its usual flow in each state (median over the last year)
+    out_cfs: float
+
+
+# AW's gauge (source, ID) → held release
+HELD = {
+    ("USGS", "02072000"): Held(  # Smith River near Philpott: Philpott Dam to North Bassett
+        "Philpott Dam",
+        leave=(0.001, 0.022, 0.038, 0.052, 0.062, 0.073),
+        enter=(0.044, 0.081, 0.112, 0.138, 0.157, 0.175),
+        in_cfs=253,
+        out_cfs=83,
+    ),
+}
+
 SCHEDULE_KEPT = 0.95  # a scheduled release can still be called off (power system, weather)
 PLACEMENTS = 13  # where in the day TVA's generating hours might fall, as forecast members
 
@@ -296,3 +332,28 @@ def generating(
             if first <= local.hour < first + on_hours:
                 paths[j, h] = unit_cfs
     return paths
+
+
+def held(
+    profile: np.ndarray, other_cfs: float, switched: tuple[float, ...], start: datetime, hours: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Paths (with weights) for a dam holding its last 24 hours' `profile` (the last value
+    at `start`) or switching to `other_cfs` at the start of a local day: each day ahead's
+    path weighted by the chance of switching on it (`switched`, cumulative), and one that
+    never switches."""
+    hold = profile[(np.arange(hours) + len(profile) - 1) % len(profile)]
+    first_day = start.astimezone(EASTERN).date()
+    days = np.array(
+        [
+            ((start + timedelta(hours=h)).astimezone(EASTERN).date() - first_day).days
+            for h in range(hours)
+        ]
+    )
+    by_day = np.maximum.accumulate(np.clip(switched, 0, 1))
+    paths, weights = [hold], [1 - by_day[-1]]
+    for day, chance in enumerate(by_day):
+        path = hold.copy()
+        path[days >= day] = other_cfs
+        paths.append(path)
+        weights.append(chance - (by_day[day - 1] if day else 0.0))
+    return np.stack(paths), np.array(weights)

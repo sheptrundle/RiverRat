@@ -101,3 +101,48 @@ def test_a_reach_below_an_unreadable_dam_isnt_estimated(client, session):  # noq
     session.commit()
     detail = client.get(f"/api/reaches/{reach.id}/whatif").json()["detail"]
     assert "Ocoee No. 3 Dam" in detail
+
+
+def test_held_switches_on_each_day_with_its_chance():
+    start = NOW  # 10:20 am EDT, Monday June 1
+    profile = np.full(24, 83.0)
+    paths, weights = releases.held(profile, 253.0, (0.04, 0.08, 0.11), start, 72)
+    assert paths.shape == (4, 72) and weights.sum() == pytest.approx(1.0)
+    assert weights == pytest.approx([0.89, 0.04, 0.04, 0.03])
+    assert (paths[0] == 83).all()  # holds
+    assert (paths[1] == 253).all()  # switched today
+    tomorrow = 14  # hours to Eastern midnight
+    assert (paths[2, :tomorrow] == 83).all() and (paths[2, tomorrow:] == 253).all()
+
+
+def test_below_philpott_the_dam_holds_its_state(client, session):  # noqa: F811
+    gauge = Gauge(
+        source="USGS",
+        source_id="02072000",
+        name="SMITH RIVER NEAR PHILPOTT, VA",
+        geom="SRID=4326;POINT(-80.03 36.78)",
+    )
+    reach = Reach(river="Smith", section="2. Philpot Dam to North Bassett", states=["USA-VRG"])
+    session.add_all([gauge, reach])
+    session.flush()
+    session.add(
+        ReachGauge(
+            reach_id=reach.id,
+            gauge_id=gauge.id,
+            is_primary=True,
+            metric="cfs",
+            range_min=200,
+            range_max=800,
+        )
+    )
+    for h in range(30):
+        at = NOW.replace(minute=0) - timedelta(hours=h)
+        session.add(Observation(gauge_id=gauge.id, param="cfs", ts=at, value=83.0, approved=False))
+    session.commit()
+
+    body = client.get(f"/api/reaches/{reach.id}/whatif").json()
+    assert body["release"] == {"dams": ["Philpott Dam"], "natural": None, "basis": "held"}
+    p = [d["p_runnable"] for d in body["days"]]
+    held = releases.HELD[("USGS", "02072000")]
+    assert p == pytest.approx(list(held.enter), abs=1e-6)
+    assert client.get(f"/api/reaches/{reach.id}/rain-response").status_code == 409

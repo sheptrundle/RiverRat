@@ -176,7 +176,8 @@ class EstimateOut(BaseModel):
 class ReleaseOut(BaseModel):
     """A reach below dams: their planned release, plus `natural`, the undammed part's
     gauge, forecast from rain (None: the dams set all of the flow). `basis`: "plan" (the
-    Corps' hourly plan), "tva" (TVA's daily plan), or "schedule" (TVA's calendar)."""
+    Corps' hourly plan), "tva" (TVA's daily plan), "schedule" (TVA's calendar), or "held"
+    (no published plan: the dam holding its pattern or switching state)."""
 
     dams: list[str]
     natural: str | None
