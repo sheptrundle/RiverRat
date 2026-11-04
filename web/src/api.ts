@@ -62,9 +62,20 @@ export type Analog = {
 /** A reach without a gauge, estimated from a similar gauge nearby scaled by watershed area. */
 export type Estimate = { area_sqmi: number; donor_area_sqmi: number; distance_km: number };
 
-/** A reach below Army Corps dams: their release plan, plus the undammed part's gauge
- * (null: the dams set all of the flow). */
-export type Release = { dams: string[]; natural: string | null };
+/** A reach below dams: their release plan, plus the undammed part's gauge (null: the dams
+ * set all of the flow). basis: the Army Corps' hourly plan, TVA's daily plan for a peaking
+ * powerhouse, or TVA's recreation release calendar. */
+export type Release = { dams: string[]; natural: string | null; basis: "plan" | "tva" | "schedule" };
+
+/** What a reach's dam forecast is built from, in a few words. */
+export const RELEASE_TAG = { plan: "Dam release plan", tva: "TVA release plan", schedule: "Release schedule" };
+
+export function releaseSource(release: Release): string {
+  const dams = release.dams.join(" and ");
+  if (release.basis === "tva") return `TVA's daily release plan for ${dams}`;
+  if (release.basis === "schedule") return `TVA's recreation release calendar for ${dams}`;
+  return `Army Corps release plan for ${dams}`;
+}
 
 export type WhatIf = {
   reach: ReachInfo;

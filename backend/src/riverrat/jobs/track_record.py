@@ -62,7 +62,12 @@ def archive(session: Session, now: datetime) -> int:
             ReachOutlook.estimate.is_(None), ReachOutlook.computed_at >= now - MAX_OUTLOOK_AGE
         )
     ).all()
-    rows = [row for found in outlooks for row in archive_rows(found, found.computed_at)]
+    rows = [
+        row
+        for found in outlooks
+        if (found.release or {}).get("basis") != "schedule"  # nothing measures the riverbed
+        for row in archive_rows(found, found.computed_at)
+    ]
     session.add_all(rows)
     session.commit()
     return len(rows)

@@ -105,6 +105,8 @@ def sync(client: PoliteClient, session: Session, now: datetime) -> ReleaseStats:
         stats.forecast_hours += len(rows)
 
     for (source, source_id), recipe in RECIPES.items():
+        if not recipe.composite:  # a live gauge of its own
+            continue
         calculated = session.scalar(
             select(Gauge).where(Gauge.source == source, Gauge.source_id == source_id)
         )

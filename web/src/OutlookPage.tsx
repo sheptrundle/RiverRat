@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { Outlook, OutlookReach } from "./api";
-import { useApi } from "./api";
+import { RELEASE_TAG, releaseSource, useApi } from "./api";
 import { BAND_COLORS, BandBar } from "./charts";
 import { FavoritesToggle, Star, favoritesInLink, useFavorites } from "./favorites";
 import { BAND_LABELS, RANGE_NOTES, classLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
@@ -227,8 +227,8 @@ export default function OutlookPage() {
                       )}
                       <div className="muted small">{sectionLabel(r)}</div>
                       {r.release && (
-                    <div className="release small" title={`Army Corps release plan for ${r.release.dams.join(" and ")}`}>
-                      Dam release plan
+                    <div className="release small" title={releaseSource(r.release)}>
+                      {RELEASE_TAG[r.release.basis]}
                     </div>
                   )}
                   {r.estimate && (

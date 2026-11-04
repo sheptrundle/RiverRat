@@ -150,7 +150,11 @@ def _row(found: Target, ensemble: outlook.Ensemble, rain, now: datetime) -> Reac
 def _release_info(found: Target) -> dict | None:
     if found.release is None:
         return None
-    return {"dams": list(found.release.dams), "natural": found.release.natural}
+    return {
+        "dams": list(found.release.dams),
+        "natural": found.release.natural,
+        "basis": found.release.basis,
+    }
 
 
 def _estimate_info(found: Target) -> dict | None:

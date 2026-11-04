@@ -77,7 +77,7 @@ def test_upper_gauley_is_forecast_from_the_release_plan(client, session, lake): 
     session.commit()
     assert stats >= 5
     body = client.get(f"/api/reaches/{reach.id}/whatif?rain_in=2").json()
-    assert body["release"] == {"dams": ["Summersville Dam"], "natural": None}
+    assert body["release"] == {"dams": ["Summersville Dam"], "natural": None, "basis": "plan"}
     assert body["now"]["value"] == pytest.approx(1500.0)
     assert body["analogs"] == []
     median = np.array(body["forecast"]["p50"])
@@ -100,4 +100,4 @@ def test_a_reach_below_an_unreadable_dam_isnt_estimated(client, session):  # noq
     session.add(reach)
     session.commit()
     detail = client.get(f"/api/reaches/{reach.id}/whatif").json()["detail"]
-    assert "TVA's Ocoee No. 3 Dam" in detail
+    assert "Ocoee No. 3 Dam" in detail

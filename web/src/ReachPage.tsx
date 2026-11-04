@@ -7,6 +7,10 @@ import { Star, useFavorites } from "./favorites";
 import { sectionLabel } from "./tables";
 import { BAND_LABELS, HOUR_MS, awUrl, classLabel, RANGE_NOTES, rangeLabel, dateLabel, dayLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
 
+// Kept in step with releases.SCHEDULE_KEPT in the backend
+const SCHEDULE_KEPT = 0.95;
+const DAMS_ONLY_LINE = { plan: "Corps release plan", tva: "TVA plan (typical placement)", schedule: "release schedule" };
+
 const STORMS: { type: StormType; label: string; hint: string }[] = [
   { type: "burst", label: "Burst", hint: "3 h thunderstorm" },
   { type: "typical", label: "Typical", hint: "18 h, the median storm" },
@@ -116,7 +120,7 @@ export default function ReachPage({ reachId }: { reachId: number }) {
           before you go.
         </p>
       )}
-      {w.release && (
+      {w.release?.basis === "plan" && (
         <p className="panel release-note">
           <strong>Below the dam.</strong> This forecast uses the Army Corps' own daily plan for{" "}
           {w.release.dams.join(" and ")}'s release
@@ -124,6 +128,24 @@ export default function ReachPage({ reachId }: { reachId: number }) {
             ? `, plus River Rat's rain forecast for the undammed water measured at ${w.release.natural}.`
             : ". The dam sets all of the flow here, so rain doesn't change the forecast."}{" "}
           The Corps can change its plan at short notice: check the day before you go.
+        </p>
+      )}
+      {w.release?.basis === "tva" && (
+        <p className="panel release-note">
+          <strong>Below the dam.</strong> The river runs when {w.release.dams.join(" and ")}'s powerhouse generates. This
+          forecast uses TVA's plan for each day's average release over the next 3 days, which says roughly how many hours
+          it will generate but not when, so the chance spreads those hours across the day (after day 3, the last day's
+          plan is held). American Whitewater gives no range here, so River Rat counts {w.bands.minimum?.toLocaleString()}{" "}
+          cfs and up (one generator) as running. TVA can change its plan at short notice: check its schedule the day
+          before you go.
+        </p>
+      )}
+      {w.release?.basis === "schedule" && (
+        <p className="panel release-note">
+          <strong>Released on a schedule.</strong> The dam bypasses this riverbed except for TVA's recreation releases,
+          so this forecast follows TVA's published calendar for {w.release.dams.join(" and ")}: running on scheduled days
+          and hours, dry otherwise. A scheduled release is occasionally called off, so release days show{" "}
+          {Math.round(SCHEDULE_KEPT * 100)}%.
         </p>
       )}
       {w.reach.next_release && (
@@ -160,7 +182,7 @@ export default function ReachPage({ reachId }: { reachId: number }) {
 
         <Hydrograph whatif={w} showStorm={!damsOnly} />
         <p className="legend">
-          <span className="key observed" /> observed <span className="key median" /> {damsOnly ? "Corps release plan" : "forecast median"}{" "}
+          <span className="key observed" /> observed <span className="key median" /> {damsOnly ? DAMS_ONLY_LINE[w.release?.basis ?? "plan"] : "forecast median"}{" "}
           {!damsOnly && (
             <>
               <span className="key fan" /> 80% range <span className="key rain" /> storm{" "}

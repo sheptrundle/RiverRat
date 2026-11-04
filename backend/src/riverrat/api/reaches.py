@@ -174,11 +174,13 @@ class EstimateOut(BaseModel):
 
 
 class ReleaseOut(BaseModel):
-    """A reach below Army Corps dams: their planned release, plus `natural`, the undammed
-    part's gauge, forecast from rain (None: the dams set all of the flow)."""
+    """A reach below dams: their planned release, plus `natural`, the undammed part's
+    gauge, forecast from rain (None: the dams set all of the flow). `basis`: "plan" (the
+    Corps' hourly plan), "tva" (TVA's daily plan), or "schedule" (TVA's calendar)."""
 
     dams: list[str]
     natural: str | None
+    basis: str = "plan"
 
 
 class WhatIf(BaseModel):
@@ -376,7 +378,11 @@ def whatif(
         gauge=_gauge_info(target),
         estimate=EstimateOut(**vars(target.estimate)) if target.estimate else None,
         release=(
-            ReleaseOut(dams=list(target.release.dams), natural=target.release.natural)
+            ReleaseOut(
+                dams=list(target.release.dams),
+                natural=target.release.natural,
+                basis=target.release.basis,
+            )
             if target.release
             else None
         ),

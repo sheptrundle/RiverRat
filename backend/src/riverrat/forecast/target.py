@@ -6,8 +6,9 @@ reach's USGS gauges stands in, preferring one on the same river. Flows are model
 cfs and reported in the range's units, through the gauge's stage rating for reaches
 rated in feet.
 
-A reach on an AW calculated gauge below Army Corps dams is forecast from the Corps'
-release plans, plus the rain forecast for any undammed part (forecast/releases.py).
+A reach below dams is forecast from their release plans (forecast/releases.py): the
+Corps' hourly plans, plus the rain forecast for any undammed part; TVA's daily plans for
+peaking powerhouses; or TVA's recreation calendar on the Ocoee.
 
 A reach with no gauge at all but a mapped watershed (reach_basin) is estimated instead:
 through a similar gauge nearby, scaled by watershed area, against a range estimated from
@@ -16,7 +17,7 @@ the watershed's size and gradient (forecast/estimate.py).
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -30,6 +31,9 @@ from riverrat.models import analog, store
 
 # A gauge whose flow record ended this long ago has been discontinued.
 DISCONTINUED_AFTER = timedelta(days=60)
+# Below dams on a live gauge of its own: hours for the gap between the gauge's reading and
+# the sum of the parts to fade (to 1/e)
+ANCHOR_FADE_H = 24
 
 
 class NoForecast(Exception):
@@ -47,13 +51,35 @@ class Estimate:
 
 @dataclass(frozen=True)
 class Release:
-    """A reach below Army Corps dams: their planned release, added to any undammed part."""
+    """A reach below dams: their planned release, added to any undammed part."""
 
-    cfs: np.ndarray  # the dams' release, hour 0 at the target's current.state.at
+    # The dams' release, hour 0 at the target's current.state.at: one path, or several
+    # (paths × hours) with `path_weights`
+    cfs: np.ndarray
     dams: tuple[str, ...]  # their names
     natural: str | None  # the undammed part's gauge, forecast from rain (None: dams only)
-    gauge: Gauge  # AW's calculated gauge: the reach's own flow, observed
+    gauge: Gauge  # the gauge that records the reach's own flow
     observed: live.Current  # its readings
+    path_weights: np.ndarray | None = None
+    natural_scale: float = 1.0  # on the undammed part's forecast
+    natural_lag_h: int = 0  # hours from the undammed part's gauge to the reach's
+    basis: str = "plan"  # "plan": the Corps' hourly plan; "tva": TVA's daily; "schedule"
+
+    def add_to(self, members: np.ndarray, weights: np.ndarray):
+        """Each undammed-flow member plus each release path, with combined weights."""
+        if self.natural_scale != 1.0:
+            members = members * self.natural_scale
+        if self.natural_lag_h:
+            lag = min(self.natural_lag_h, members.shape[-1])
+            lead = np.repeat(members[:, :1], lag, axis=1)
+            members = np.concatenate([lead, members[:, : members.shape[-1] - lag]], axis=1)
+        paths = np.atleast_2d(self.cfs)[:, : members.shape[-1]]
+        if self.path_weights is None:
+            path_weights = np.full(len(paths), 1 / len(paths))
+        else:
+            path_weights = self.path_weights
+        combined = (members[:, None, :] + paths[None]).reshape(-1, members.shape[-1])
+        return combined, (weights[:, None] * path_weights[None]).ravel()
 
 
 @dataclass(frozen=True)
@@ -77,7 +103,7 @@ class Target:
         repeats each member once per plausible range; below dams, their planned release
         is added."""
         if self.release is not None:
-            members = members + self.release.cfs[None, : members.shape[-1]]
+            members, weights = self.release.add_to(members, weights)
         values = self.to_units(members)
         if self.spread is None:
             return values, weights
@@ -98,11 +124,7 @@ class Target:
 
 def target(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Target:
     if reach.aw_id in releases.TVA_REACHES:
-        dam = releases.DAMS[releases.TVA_REACHES[reach.aw_id]]
-        raise NoForecast(
-            f"its flow is set by TVA's {dam.name}, and River Rat can't give a chance of running "
-            "yet (no runnable range or release schedule): see TVA's releases below"
-        )
+        return _tva(session, reach, releases.TVA_REACHES[reach.aw_id], now)
     # Each linked gauge, or for an NWS location its USGS twin at the same place.
     linked = aliased(Gauge)
     gauge = aliased(Gauge)
@@ -201,6 +223,14 @@ def _release(
         bands = Bands(link.metric, link.range_min, link.range_max)
     except ValueError:
         raise NoForecast("the reach has no runnable range") from None
+    to_units = _identity
+    if link.metric == "ft":
+        rating = store.rating(data_dir, calculated.source_id)
+        if rating is None:
+            raise NoForecast(
+                f"gauge {calculated.source_id} has no stage rating for a range in feet"
+            )
+        to_units = rating.to_ft
     observed = live.current(session, calculated.id, now)
     if observed is None:
         raise NoForecast("the dam release readings haven't come in")
@@ -227,18 +257,77 @@ def _release(
         )
         plan = None
         if dam_gauge is not None:
-            plan = releases.planned(session, dam_gauge, current.state.at, len(cfs))
+            plan = releases.planned(
+                session, dam_gauge, current.state.at, len(cfs), lag_h=recipe.dam_lag_h
+            )
         if plan is None:
             raise NoForecast(f"the Army Corps hasn't published a release forecast for {dam.name}")
         cfs += plan
+    if not recipe.composite:
+        # The gauge measures the reach itself: start from its reading, letting the sum's
+        # error at the start (a few percent) fade over a day or so
+        natural_now = recipe.natural_scale * current.state.q if recipe.natural else 0.0
+        start_error = observed.state.q - (cfs[0] + natural_now)
+        cfs += start_error * np.exp(-np.arange(len(cfs)) / ANCHOR_FADE_H)
     release = Release(
         cfs,
         tuple(dam.name for dam in dams),
         gauge.name if recipe.natural else None,
         calculated,
         observed,
+        natural_scale=recipe.natural_scale,
+        natural_lag_h=recipe.natural_lag_h,
     )
-    return Target(reach, gauge, bands, lat, lon, library, current, _identity, True, release=release)
+    return Target(reach, gauge, bands, lat, lon, library, current, to_units, True, release=release)
+
+
+def _tva(session: Session, reach: Reach, tva: releases.TvaReach, now: datetime) -> Target:
+    """Below a TVA dam: its recreation calendar, or its daily plan for the powerhouse."""
+    dam = releases.DAMS[tva.dam]
+    if tva.range_cfs is None:
+        raise NoForecast(tva.why_not)
+    gauge = session.scalar(
+        select(Gauge).where(Gauge.source == "TVA", Gauge.source_id == dam.source_id)
+    )
+    observed = live.current(session, gauge.id, now) if gauge is not None else None
+    if gauge is None or observed is None:
+        raise NoForecast(f"TVA's readings for {dam.name} haven't come in")
+    bands = Bands("cfs", *tva.range_cfs)
+    hours = analog.HORIZON_H + 1
+    if tva.schedule is not None:
+        # The riverbed's flow is the calendar's: the dam's discharge is mostly the flume's.
+        at = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+        recent_start = at - timedelta(hours=len(observed.recent_cfs) - 1)
+        recent = releases.scheduled(tva, recent_start, len(observed.recent_cfs))
+        state = analog.State(q=float(recent[-1]), api_mm=0.0, at=at)
+        observed = live.Current(state, None, 0, recent_start, recent)
+        cfs = np.stack([releases.scheduled(tva, at, hours), np.zeros(hours)])
+        weights = np.array([releases.SCHEDULE_KEPT, 1 - releases.SCHEDULE_KEPT])
+        basis = "schedule"
+    else:
+        plan = releases.planned(session, gauge.id, observed.state.at, hours, dam.forecast_source)
+        if plan is None:
+            raise NoForecast(f"TVA hasn't published a release forecast for {dam.name}")
+        recent = observed.recent_cfs[np.isfinite(observed.recent_cfs)]
+        running = recent[recent >= 0.5 * tva.unit_cfs]
+        unit = float(np.median(running)) if len(running) else tva.unit_cfs
+        base = float(min(recent.min(), 0.5 * unit)) if len(recent) else 0.0
+        cfs = releases.generating(plan, observed.state.at, unit, base)
+        weights = None
+        basis = "tva"
+    release = Release(cfs, (dam.name,), None, gauge, observed, path_weights=weights, basis=basis)
+    return Target(
+        reach,
+        gauge,
+        bands,
+        dam.lat,
+        dam.lon,
+        None,
+        observed,
+        _identity,
+        True,
+        release=release,
+    )
 
 
 def _estimate(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Target:

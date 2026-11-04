@@ -39,6 +39,8 @@ class EstimateInfo(BaseModel):
 class ReleaseInfo(BaseModel):
     dams: list[str]
     natural: str | None  # the undammed part's gauge (None: the dams set all of the flow)
+    # "plan": the Corps' hourly plan; "tva": TVA's daily plan; "schedule": TVA's calendar
+    basis: str = "plan"
 
 
 class OutlookReach(BaseModel):
