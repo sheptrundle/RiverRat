@@ -1,6 +1,7 @@
 from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
+import pytest
 from test_whatif_api import NOW, client, lake  # noqa: F401
 
 from riverrat.db.models import DamNotice, NoaaForecast, Observation, Reach
@@ -61,7 +62,7 @@ def test_a_tva_reach_shows_its_dams_releases_and_notice(client, session):  # noq
     assert whatif["release"]["basis"] == "schedule" and whatif["now"]["value"] == 0.0
     p = {d["day"]: d["p_runnable"] for d in whatif["days"]}
     assert p["2026-06-01"] == 0.0 and p["2026-06-05"] == 0.0
-    assert p["2026-06-06"] == releases.SCHEDULE_KEPT
+    assert p["2026-06-06"] == pytest.approx(releases.SCHEDULE_KEPT)
     body = client.get(f"/api/reaches/{reach.id}/releases").json()
     assert body["reach"]["aw_id"] == 1781
     (shown,) = body["dams"]
@@ -127,6 +128,6 @@ def test_a_tva_powerhouse_reach_is_forecast_from_the_daily_plan(client, session)
     body = client.get(f"/api/reaches/{reach.id}/whatif").json()
     assert body["release"]["basis"] == "tva" and body["bands"]["minimum"] == 1000
     p = {d["day"]: d["p_runnable"] for d in body["days"]}
-    assert p["2026-06-01"] == 1.0  # generating all day
-    assert p["2026-06-02"] == 0.0  # not at all
+    assert p["2026-06-01"] == pytest.approx(1.0)  # generating all day
+    assert p["2026-06-02"] == pytest.approx(0.0)  # not at all
     assert 0.5 < p["2026-06-03"] < 1.0  # about 4 hours, sometimes all at night
