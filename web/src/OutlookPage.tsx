@@ -125,30 +125,47 @@ export default function OutlookPage() {
       <p className="muted">
         Chance each reach is in its runnable range at some point during daylight. Updated {timeLabel(Date.parse(data.computed_at))}
         {data.rain_issued_at && ` from NOAA's ${timeLabel(Date.parse(data.rain_issued_at))} rain forecast`}.
-        {dry && " NOAA's forecast is dry, so these follow each river's recession: try the rain slider."}
+        {dry && " NOAA's forecast is dry, so these follow each river's recession: try your own storm."}
       </p>
       {stormStart && data.whatif_rain_in.length > 1 && (
         <div className={whatif ? "panel rain-bar on" : "panel rain-bar"}>
-          <label htmlFor="region-rain">
-            <strong>
-              {whatif
-                ? `What if every watershed got ${inches(data.whatif_rain_in[rainIndex])} starting ${timeLabel(stormStart)}?`
-                : "Rain: NOAA's forecast"}
-            </strong>
-          </label>
-          <input
-            id="region-rain"
-            type="range"
-            min={0}
-            max={data.whatif_rain_in.length - 1}
-            step={1}
-            value={rainIndex}
-            onChange={(e) => resetting(setRainIndex)(Number(e.target.value))}
-          />
+          <div className="rain-mode">
+            <div className="segmented" role="radiogroup" aria-label="Rain">
+              <button role="radio" aria-checked={!whatif} className={whatif ? "" : "on"} onClick={() => resetting(setRainIndex)(0)}>
+                NOAA forecast
+              </button>
+              <button
+                role="radio"
+                aria-checked={whatif}
+                className={whatif ? "on" : ""}
+                onClick={() => !whatif && resetting(setRainIndex)(Math.max(1, data.whatif_rain_in.indexOf(1)))}
+              >
+                Your own storm
+              </button>
+            </div>
+            {whatif && (
+              <label htmlFor="region-rain">
+                <strong>
+                  {inches(data.whatif_rain_in[rainIndex])} on every watershed, starting {timeLabel(stormStart)}
+                </strong>
+              </label>
+            )}
+          </div>
+          {whatif && (
+            <input
+              id="region-rain"
+              type="range"
+              min={1}
+              max={data.whatif_rain_in.length - 1}
+              step={1}
+              value={rainIndex}
+              onChange={(e) => resetting(setRainIndex)(Number(e.target.value))}
+            />
+          )}
           <span className="muted small">
             {whatif
-              ? "A typical 18-hour storm of this size on every watershed, in place of the forecast. Open a reach to try other amounts, timings, and storm types."
-              : `Drag to add a storm of up to ${data.whatif_rain_in[data.whatif_rain_in.length - 1]} in on every watershed, starting ${timeLabel(stormStart)}.`}
+              ? `A typical 18-hour storm of this size (up to ${data.whatif_rain_in[data.whatif_rain_in.length - 1]} in) on every watershed, in place of NOAA's forecast. Open a reach to try other amounts, timings, and storm types.`
+              : "The chances below use NOAA's latest rain forecast. Switch to your own storm to see what a given amount of rain would do."}
           </span>
         </div>
       )}

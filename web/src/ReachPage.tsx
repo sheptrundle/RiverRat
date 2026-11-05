@@ -170,7 +170,7 @@ export default function ReachPage({ reachId }: { reachId: number }) {
           <div className="controls">
             <label>
               Basin rain <strong>{inches(rain)}</strong>
-              <input type="range" min={0} max={4} step={0.25} value={rain} onChange={(e) => setRain(Number(e.target.value))} />
+              <input type="range" min={0} max={5} step={0.25} value={rain} onChange={(e) => setRain(Number(e.target.value))} />
             </label>
             <label>
               Starting <strong>{timeLabel(stormStart)}</strong>

@@ -22,7 +22,7 @@ from riverrat.models import analog
 from riverrat.models.recession import WET_MM
 
 MM_PER_IN = 25.4
-RAIN_IN = tuple(np.round(np.arange(0, 4.001, 0.25), 2))
+RAIN_IN = tuple(np.round(np.arange(0, 5.001, 0.25), 2))
 # From 2002–2025 storms of 0.5 in+ in the pilot: duration and the share of the rain in
 # the wettest 3 hours (median 18 h storm: 45%).
 STORM_TYPES = {

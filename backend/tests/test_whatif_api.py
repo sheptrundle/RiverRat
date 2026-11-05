@@ -178,7 +178,7 @@ def test_rain_response_marks_the_forecast_range(client, session):
     session.commit()
 
     body = client.get(f"/api/reaches/{reach_id}/rain-response").json()
-    assert body["rain_in"][0] == 0 and body["rain_in"][-1] == 4
+    assert body["rain_in"][0] == 0 and body["rain_in"][-1] == 5
     assert body["forecast_issued_at"].startswith("2026-06-01T06:00")
     today, tomorrow = body["days"][:2]
     assert len(today["p_runnable"]) == len(body["rain_in"])
@@ -363,9 +363,9 @@ def test_outlook_job_and_endpoint(client, session, lake):
     assert days[1]["peak_bands"]["too_low"] < 0.5
     assert days[2]["rain_in"]["p50"] > days[1]["rain_in"]["p50"]
 
-    # the region-wide what-if: a storm the same evening (22:00 UTC), 0–3 in
+    # the region-wide what-if: a storm the same evening (22:00 UTC), 0–5 in
     assert body["whatif_storm_start"] == "2026-06-01T22:00:00Z"
-    assert body["whatif_rain_in"][0] == 0 and body["whatif_rain_in"][-1] == 3
+    assert body["whatif_rain_in"][0] == 0 and body["whatif_rain_in"][-1] == 5
     tomorrow = reach["whatif"][1]["p_runnable"]
     assert len(tomorrow) == len(body["whatif_rain_in"])
     assert tomorrow[0] == 0 and max(tomorrow) > 0.5

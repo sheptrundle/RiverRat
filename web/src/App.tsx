@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import CreditsPage from "./CreditsPage";
 import HomePage from "./HomePage";
 import OutlookPage from "./OutlookPage";
 import ReachList from "./ReachList";
 import ReachPage from "./ReachPage";
 import TrackRecordPage from "./TrackRecordPage";
+
+// MapLibre is big: load it only when the map is opened.
+const MapPage = lazy(() => import("./MapPage"));
 
 function useHash(): string {
   const [hash, setHash] = useState(location.hash);
@@ -16,11 +19,12 @@ function useHash(): string {
   return hash;
 }
 
-type Page = "home" | "outlook" | "reaches" | "track" | "credits" | "reach";
+type Page = "home" | "outlook" | "reaches" | "track" | "credits" | "reach" | "map";
 
 const MENU: { page: Page; href: string; label: string }[] = [
   { page: "home", href: "#/", label: "Home" },
   { page: "outlook", href: "#/outlook", label: "Outlook" },
+  { page: "map", href: "#/map", label: "Map" },
   { page: "reaches", href: "#/reaches", label: "All reaches" },
   { page: "track", href: "#/track-record", label: "Track record" },
   { page: "credits", href: "#/credits", label: "Credits" },
@@ -42,6 +46,7 @@ function pageOf(hash: string): Page {
   // the old Favorites page is now the Outlook with "Favorites Only" on
   if (path.startsWith("/outlook") || path.startsWith("/favorites")) return "outlook";
   if (path.startsWith("/reaches")) return "reaches";
+  if (path.startsWith("/map")) return "map";
   if (path.startsWith("/track-record")) return "track";
   if (path.startsWith("/credits")) return "credits";
   // older links to the Outlook were "#/?rain=1.5"
@@ -106,6 +111,10 @@ export default function App() {
           <ReachPage key={reachId} reachId={Number(reachId)} />
         ) : page === "home" ? (
           <HomePage />
+        ) : page === "map" ? (
+          <Suspense fallback={<p className="muted">Loading the map…</p>}>
+            <MapPage />
+          </Suspense>
         ) : page === "reaches" ? (
           <ReachList />
         ) : page === "track" ? (

@@ -38,7 +38,8 @@ from riverrat.models import analog
 
 log = logging.getLogger(__name__)
 
-WHATIF_RAIN_IN = tuple(np.round(np.arange(0, 3.001, 0.25), 2))
+# 0–3 in by quarters, then by halves to 5 in (each amount is a forecast per gauge, hourly)
+WHATIF_RAIN_IN = (*np.round(np.arange(0, 3.001, 0.25), 2).tolist(), 3.5, 4.0, 4.5, 5.0)
 WHATIF_STORM = "typical"
 STORM_HOUR_UTC = 22  # 6 pm EDT / 5 pm EST
 STORM_LEAD = timedelta(hours=2)  # the soonest the what-if storm starts

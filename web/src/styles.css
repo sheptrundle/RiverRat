@@ -1006,3 +1006,118 @@ h2 .star {
   border-radius: 6px;
   white-space: nowrap;
 }
+
+/* map page */
+.map-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin-bottom: 12px;
+}
+.map-controls h2 {
+  margin: 0;
+}
+.map-controls .segmented {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.map-controls .segmented button {
+  padding: 6px 12px;
+  white-space: nowrap;
+}
+.map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  color: var(--muted);
+}
+.map-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.map-legend i {
+  display: inline-block;
+  width: 16px;
+  height: 4px;
+  border-radius: 2px;
+}
+.map-legend .ramp {
+  width: 120px;
+  height: 6px;
+  border-radius: 3px;
+}
+.map-frame {
+  position: relative;
+  height: min(72vh, 760px);
+  min-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--panel);
+}
+.map-frame .map {
+  position: absolute;
+  inset: 0;
+}
+.map-loading {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--panel);
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.map-card {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  width: min(320px, calc(100% - 24px));
+  display: grid;
+  gap: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+.map-card p {
+  margin: 0;
+}
+.map-card-title {
+  font-weight: 600;
+  font-size: 1.05rem;
+  padding-right: 24px;
+}
+.map-card-close {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.map-card-days {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 2px;
+  text-align: center;
+  font-size: 0.8rem;
+}
+.map-card-days > span {
+  display: grid;
+  padding: 3px 0;
+  border-radius: 4px;
+}
+.map-card-days > span.on {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.rain-mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
