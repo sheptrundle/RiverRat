@@ -16,6 +16,7 @@ from riverrat.forecast.target import Target
 from riverrat.models import store
 
 MIN_DAYS = 365
+MIN_MONTH_DAYS = 60  # a month's shares need about two years of that month
 # The range is out of the gauge's reach when its bottom is above this quantile of daily
 # highs, or its top below this quantile of daily lows.
 RECORD_QUANTILE = 0.999
@@ -28,6 +29,17 @@ class RangeHistory:
     # "above_record": the gauge (almost) never gets that high; "below_record": it
     # (almost) never gets that low. Either suggests a range meant for another gauge.
     note: str | None
+    # January to December: the share of that month's days in range, too low all day,
+    # and too high all day (None: too few days of that month on record)
+    months: list["MonthShare | None"]
+
+
+@dataclass(frozen=True)
+class MonthShare:
+    in_range: float
+    too_low: float
+    too_high: float
+    days: int
 
 
 def range_history(found: Target, data_dir: Path) -> RangeHistory | None:
@@ -37,7 +49,8 @@ def range_history(found: Target, data_dir: Path) -> RangeHistory | None:
     daily = store.daily_range(data_dir, found.gauge.source_id)
     if daily is None or len(daily[0]) < MIN_DAYS:
         return None
-    lows, highs = (np.asarray(found.to_units(v), float) for v in daily)
+    lows, highs = (np.asarray(found.to_units(v), float) for v in daily[:2])
+    months = daily[2]
     bands = found.bands
     bottom = -np.inf if bands.minimum is None else bands.minimum
     top = np.inf if bands.maximum is None else bands.maximum
@@ -46,5 +59,20 @@ def range_history(found: Target, data_dir: Path) -> RangeHistory | None:
         note = "above_record"
     elif np.quantile(lows, 1 - RECORD_QUANTILE) > top:
         note = "below_record"
-    share = float(np.mean((highs >= bottom) & (lows <= top)))
-    return RangeHistory(share, len(lows), note)
+    in_range = (highs >= bottom) & (lows <= top)
+    too_low = highs < bottom
+    by_month = []
+    for month in range(1, 13):
+        days = months == month
+        n = int(days.sum())
+        by_month.append(
+            MonthShare(
+                float(in_range[days].mean()),
+                float(too_low[days].mean()),
+                float((~in_range[days] & ~too_low[days]).mean()),
+                n,
+            )
+            if n >= MIN_MONTH_DAYS
+            else None
+        )
+    return RangeHistory(float(in_range.mean()), len(lows), note, by_month)

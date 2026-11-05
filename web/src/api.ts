@@ -37,6 +37,8 @@ export type Now = {
   api_mm: number;
   rain_hours: number;
 };
+/** One calendar month over the gauge's last 10 years: shares of its days. */
+export type MonthShare = { in_range: number; too_low: number; too_high: number; days: number };
 export type Fan = { start: string; p10: number[]; p50: number[]; p90: number[] };
 export type Series = { start: string; values: (number | null)[] };
 export type Quantiles = { p10: number; p50: number; p90: number };
@@ -86,7 +88,7 @@ export type WhatIf = {
   release: Release | null;
   bands: Bands;
   now: Now;
-  history: { share_in_range: number; days: number; note: string | null } | null;
+  history: { share_in_range: number; days: number; note: string | null; months: (MonthShare | null)[] } | null;
   observed: Series;
   storm: { rain_in: number; type: StormType; start_h: number; duration_h: number };
   forecast: Fan;

@@ -107,10 +107,18 @@ class Now(BaseModel):
     rain_hours: int  # hours of live basin rain behind it, of 720
 
 
+class MonthOut(BaseModel):
+    in_range: float  # share of that month's days
+    too_low: float  # all day
+    too_high: float  # all day
+    days: int
+
+
 class History(BaseModel):
     share_in_range: float  # of days over the last 10 years
     days: int
     note: str | None  # "above_record" / "below_record": the range looks wrong for the gauge
+    months: list[MonthOut | None]  # January to December (None: too few days on record)
 
 
 class StormInfo(BaseModel):
@@ -296,7 +304,15 @@ def _history(target: Target, data_dir: Path) -> History | None:
     found = range_history(target, data_dir)
     if found is None:
         return None
-    return History(share_in_range=found.share_in_range, days=found.days, note=found.note)
+    return History(
+        share_in_range=found.share_in_range,
+        days=found.days,
+        note=found.note,
+        months=[
+            None if m is None else MonthOut(**{k: round(v, 3) for k, v in vars(m).items()})
+            for m in found.months
+        ],
+    )
 
 
 def _observed(target: Target) -> Series:

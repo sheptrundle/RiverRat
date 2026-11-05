@@ -4,6 +4,7 @@ import { useApi } from "./api";
 import { BAND_COLORS, BandBar, Hydrograph, ResponseCurve } from "./charts";
 import DamReleases from "./DamReleases";
 import { Star, useFavorites } from "./favorites";
+import { SeasonChart } from "./SeasonChart";
 import { sectionLabel } from "./tables";
 import { BAND_LABELS, HOUR_MS, awUrl, classLabel, RANGE_NOTES, rangeLabel, dateLabel, dayLabel, flow, inches, percent, rainRange, timeLabel, weekday } from "./format";
 
@@ -214,6 +215,8 @@ export default function ReachPage({ reachId }: { reachId: number }) {
         <p className="muted small">Chance of being in range at some point during daylight. Bars: where the day's peak lands, too low → too high.</p>
       </div>
 
+      {w.history && <SeasonChart months={w.history.months} />}
+
       {rr && dayCurve && (
         <div className="panel">
           <h3>
@@ -228,7 +231,7 @@ export default function ReachPage({ reachId }: { reachId: number }) {
           </p>
           <p>
             {dayCurve.rain_needed_in === null
-              ? "Even 4 inches likely isn't enough that day."
+              ? `Even ${rr.rain_in[rr.rain_in.length - 1]} inches likely isn't enough that day.`
               : dayCurve.rain_needed_in === 0
                 ? "Likely to reach the range without more rain."
                 : `Needs about ${inches(dayCurve.rain_needed_in)} for an even chance of reaching the range.`}

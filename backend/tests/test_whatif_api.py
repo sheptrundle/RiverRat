@@ -381,12 +381,22 @@ def test_range_history_and_ranges_that_look_wrong(client, session):
     assert history["days"] >= 365
     assert 0.01 < history["share_in_range"] < 0.5
     assert history["note"] is None
+    # month by month: in range, too low, or too high all day
+    months = [m for m in history["months"] if m is not None]
+    assert len(history["months"]) == 12 and months
+    for m in months:
+        assert m["in_range"] + m["too_low"] + m["too_high"] == pytest.approx(1, abs=0.002)
+    days = sum(m["days"] for m in months)
+    assert sum(m["in_range"] * m["days"] for m in months) / days == pytest.approx(
+        history["share_in_range"], abs=0.01
+    )
 
     link = session.query(ReachGauge).one()
     link.range_min, link.range_max = 1.0, 10.0  # the river never drops that low
     session.commit()
     history = client.get(f"/api/reaches/{reach_id}/whatif").json()["history"]
     assert (history["share_in_range"], history["note"]) == (0.0, "below_record")
+    assert all(m["too_high"] == 1 for m in history["months"] if m is not None)
 
 
 # --- reaches without a gauge -----------------------------------------------------------

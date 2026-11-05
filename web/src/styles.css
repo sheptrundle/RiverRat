@@ -1121,3 +1121,56 @@ h2 .star {
   align-items: center;
   gap: 8px 16px;
 }
+
+/* best months */
+.season {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 4px;
+  align-items: end;
+  margin: 8px 0;
+}
+.season-month {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+}
+.season-bar {
+  width: 100%;
+  max-width: 44px;
+  height: 120px;
+  display: flex;
+  flex-direction: column;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--line);
+  opacity: 0.75;
+}
+.season-bar span {
+  display: block;
+  flex: none;
+}
+.season-month.best .season-bar {
+  opacity: 1;
+}
+.season-month.best .season-value {
+  font-weight: 700;
+}
+.season-value {
+  color: var(--muted);
+}
+.season-month.best .season-value {
+  color: var(--text);
+}
+.season-month.now .season-label {
+  font-weight: 700;
+  text-decoration: underline;
+}
+@media (max-width: 720px) {
+  .season-bar {
+    height: 90px;
+  }
+  .season-value {
+    font-size: 0.7rem;
+  }
+}

@@ -84,9 +84,10 @@ HISTORY_YEARS = 10
 MIN_HOURS_PER_DAY = 18
 
 
-def daily_range(data_dir: Path, site: str) -> tuple[np.ndarray, np.ndarray] | None:
+def daily_range(data_dir: Path, site: str) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
     """The gauge's daily lowest and highest hourly flow (cfs) over its last
-    HISTORY_YEARS years, for days with at least MIN_HOURS_PER_DAY hours of readings."""
+    HISTORY_YEARS years, for days with at least MIN_HOURS_PER_DAY hours of readings, and
+    each day's month (1–12)."""
     hourly_file = event_jobs.hourly_path(data_dir, site)
     if not hourly_file.exists():
         return None
@@ -94,12 +95,17 @@ def daily_range(data_dir: Path, site: str) -> tuple[np.ndarray, np.ndarray] | No
 
 
 @lru_cache(maxsize=512)
-def _daily_range(hourly_file: Path, _mtime: float) -> tuple[np.ndarray, np.ndarray]:
-    cfs = pq.read_table(hourly_file, columns=["cfs"])["cfs"].to_numpy().astype(float)
-    days = cfs[-(len(cfs) // 24) * 24 :].reshape(-1, 24)[-365 * HISTORY_YEARS :]
+def _daily_range(hourly_file: Path, _mtime: float) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    table = pq.read_table(hourly_file, columns=["ts", "cfs"])
+    cfs = table["cfs"].to_numpy().astype(float)
+    whole = (len(cfs) // 24) * 24
+    days = cfs[-whole:].reshape(-1, 24)[-365 * HISTORY_YEARS :]
+    # each day's middle hour gives its month
+    middles = table["ts"].to_numpy()[-whole:].reshape(-1, 24)[-365 * HISTORY_YEARS :, 12]
+    months = middles.astype("datetime64[M]").astype(int) % 12 + 1
     seen = np.isfinite(days).sum(axis=1) >= MIN_HOURS_PER_DAY
     with np.errstate(all="ignore"):
-        return np.nanmin(days[seen], axis=1), np.nanmax(days[seen], axis=1)
+        return np.nanmin(days[seen], axis=1), np.nanmax(days[seen], axis=1), months[seen]
 
 
 def rating(data_dir: Path, site: str) -> Rating | None:
