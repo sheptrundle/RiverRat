@@ -100,6 +100,7 @@ class ScoreStats:
     scored: int = 0
     unscorable: int = 0
     waiting: int = 0
+    unlocated: int = 0  # neither the gauge nor the reach has a location
 
 
 def score(session: Session, now: datetime) -> ScoreStats:
@@ -122,6 +123,15 @@ def score(session: Session, now: datetime) -> ScoreStats:
                 ForecastArchive.day <= now.date(),
             )
         ).all()
+        if lat is None:  # an AW calculated gauge (a dam's release) has no location
+            lat, lon = session.execute(
+                select(
+                    func.ST_Y(func.ST_Centroid(Reach.geom)), func.ST_X(func.ST_Centroid(Reach.geom))
+                ).where(Reach.id == rows[0].reach_id)
+            ).one()
+        if lat is None:
+            stats.unlocated += 1
+            continue
         days = sorted({r.day for r in rows})
         start = datetime.combine(days[0], time(), UTC)
         end = datetime.combine(days[-1] + timedelta(days=1), time(), UTC)
@@ -165,18 +175,24 @@ def _np(at: datetime) -> np.datetime64:
     return np.datetime64(at.astimezone(UTC).replace(tzinfo=None), "s")
 
 
-def replay(session: Session, *, data_dir: Path, start: date, end: date) -> int:
+def replay(
+    session: Session, *, data_dir: Path, start: date, end: date, sites: list[str] | None = None
+) -> int:
     """Recompute and keep the mornings from `start` through `end` (replacing earlier
-    replays of them). Returns how many rows were kept."""
+    replays of them), with `sites` only for reaches forecast through those gauges (gauges
+    added later). Returns how many rows were kept."""
     mornings = [
         datetime.combine(start + timedelta(days=n), time(ARCHIVE_HOUR_UTC), UTC)
         for n in range((end - start).days + 1)
     ]
-    session.execute(
-        delete(ForecastArchive).where(
-            ForecastArchive.replay, ForecastArchive.issued_at.in_(mornings)
-        )
+    gone = delete(ForecastArchive).where(
+        ForecastArchive.replay, ForecastArchive.issued_at.in_(mornings)
     )
+    if sites:
+        gone = gone.where(
+            ForecastArchive.gauge_id.in_(select(Gauge.id).where(Gauge.source_id.in_(sites)))
+        )
+    session.execute(gone)
     session.commit()
     reaches = session.scalars(
         select(Reach).where(exists().where(ReachGauge.reach_id == Reach.id)).order_by(Reach.id)
@@ -192,6 +208,8 @@ def replay(session: Session, *, data_dir: Path, start: date, end: date) -> int:
             except NoForecast:
                 continue
             if found.release is not None:  # the Corps' past release plans weren't kept
+                continue
+            if sites and found.gauge.source_id not in sites:
                 continue
             gauge = found.gauge
             if gauge.id not in ensembles:
@@ -231,6 +249,7 @@ def main() -> int:
     again = sub.add_parser("replay", help="Recompute past mornings from what was known then")
     again.add_argument("--start", type=date.fromisoformat, required=True)
     again.add_argument("--end", type=date.fromisoformat, required=True)
+    again.add_argument("--gauge", action="append", help="Only reaches on these USGS sites")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -244,7 +263,9 @@ def main() -> int:
             data_dir = get_settings().data_dir
             log.info(
                 "Replay: %d reach-days",
-                replay(session, data_dir=data_dir, start=args.start, end=args.end),
+                replay(
+                    session, data_dir=data_dir, start=args.start, end=args.end, sites=args.gauge
+                ),
             )
     return 0
 

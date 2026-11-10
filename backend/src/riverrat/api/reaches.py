@@ -16,7 +16,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from riverrat.config import get_settings
-from riverrat.db.models import DamNotice, Gauge, NoaaForecast, Observation, Reach, ReachGauge
+from riverrat.db.models import (
+    DamNotice,
+    Gauge,
+    NoaaForecast,
+    Observation,
+    Reach,
+    ReachGauge,
+    ReachOutlook,
+)
 from riverrat.db.session import get_engine
 from riverrat.features import hourly
 from riverrat.forecast import bands as band_names
@@ -350,8 +358,16 @@ def list_reaches(session: SessionDep) -> list[ReachSummary]:
         .outerjoin(Gauge, Gauge.id == ReachGauge.gauge_id)
         .order_by(Reach.river, Reach.section, ReachGauge.id)
     ).all()
+    # Where the Outlook forecasts a reach, its range is the one forecast against (e.g. with
+    # AW's placeholder top dropped, forecast/target.py)
+    forecast = {
+        o.reach_id: (o.metric, o.range_min, o.range_max)
+        for o in session.scalars(select(ReachOutlook))
+    }
     out: dict[int, ReachSummary] = {}
     for reach, site, metric, low, high in rows:
+        if reach.id in forecast and forecast[reach.id][0] == metric:
+            _, low, high = forecast[reach.id]
         if reach.id not in out:
             out[reach.id] = ReachSummary(
                 **_reach_info(reach).model_dump(),

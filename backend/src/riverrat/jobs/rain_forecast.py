@@ -67,12 +67,18 @@ def archive(
     since: datetime | None = None,
     max_runs: int | None = None,
     workers: int = 8,
+    sites: list[str] | None = None,
+    cycle: int | None = None,
 ) -> ForecastStats:
-    """Newest first; `max_runs` caps the runs stored (unpublished ones don't count)."""
+    """Newest first; `max_runs` caps the runs stored (unpublished ones don't count). With
+    `sites`, runs already archived are done again for just those basins (basins added
+    later, for replaying past mornings); `cycle` keeps only that UTC hour's runs."""
     stats = ForecastStats()
     now = now or datetime.now(UTC)
     since = since or now - LOOKBACK
     basins = rain_jobs.basin_rows(session)
+    if sites:
+        basins = [b for b in basins if b[1] in sites]
     stored = set(
         session.scalars(
             select(RainForecastRun.issued_at).where(
@@ -81,7 +87,11 @@ def archive(
         )
     )
     session.rollback()  # no transaction open during the downloads
-    todo = [issued for issued in runs_between(since, now) if issued not in stored]
+    todo = [
+        issued
+        for issued in runs_between(since, now)
+        if (sites or issued not in stored) and cycle in (None, issued.hour)
+    ]
 
     weights: tuple[grib.Grid, list[CellWeights]] | None = None
     geoms = [geom for _, _, geom in basins]
@@ -187,6 +197,8 @@ def main() -> int:
         help="Oldest run to consider (default: 2 days ago)",
     )
     run.add_argument("--max-runs", type=int, help="Store at most this many runs")
+    run.add_argument("--gauge", action="append", help="Redo runs for only these USGS sites")
+    run.add_argument("--cycle", type=int, help="Only runs from this UTC hour")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -195,7 +207,14 @@ def main() -> int:
     user_agent = f"RiverRat/0.1 (+{settings.scraper_contact})"
     # AWS Open Data serves anonymous parallel reads; no throttle needed.
     with PoliteClient(user_agent, 0, timeout=120) as client, Session(get_engine()) as session:
-        stats = archive(client, session, since=args.since, max_runs=args.max_runs)
+        stats = archive(
+            client,
+            session,
+            since=args.since,
+            max_runs=args.max_runs,
+            sites=args.gauge,
+            cycle=args.cycle,
+        )
         log.info("Rain forecasts: %s", stats)
     return 0
 

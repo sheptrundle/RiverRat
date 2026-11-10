@@ -24,8 +24,8 @@ type Page = "home" | "outlook" | "reaches" | "track" | "credits" | "reach" | "ma
 const MENU: { page: Page; href: string; label: string }[] = [
   { page: "home", href: "#/", label: "Home" },
   { page: "outlook", href: "#/outlook", label: "Outlook" },
-  { page: "map", href: "#/map", label: "Map" },
   { page: "reaches", href: "#/reaches", label: "All reaches" },
+  { page: "map", href: "#/map", label: "Map" },
   { page: "track", href: "#/track-record", label: "Track record" },
   { page: "credits", href: "#/credits", label: "Credits" },
 ];

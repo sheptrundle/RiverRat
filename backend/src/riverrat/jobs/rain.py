@@ -95,15 +95,21 @@ def backfill(
     years: list[int] | None = None,
     refresh: bool = False,
     workers: int = 8,
+    sites: list[str] | None = None,
 ) -> RainStats:
+    """With `sites`, recompute just those basins (after their shapes change)."""
     stats = RainStats()
     basins = load_basins(session)
+    if sites:
+        basins = {site: geom for site, geom in basins.items() if site in sites}
     available = aorc.list_years(client)
     wanted = [y for y in available if y >= start_year and (years is None or y in years)]
     for year in wanted:
         path = rain_path(data_dir, year)
         existing = None if refresh or not path.exists() else _read(path)
-        done = set(existing.column("site").unique().to_pylist()) if existing else set()
+        done = (
+            set(existing.column("site").unique().to_pylist()) if existing and not sites else set()
+        )
         todo = {site: geom for site, geom in basins.items() if site not in done}
         if not todo:
             stats.years_skipped += 1
@@ -331,6 +337,7 @@ def main() -> int:
     back.add_argument("--year", type=int, action="append", help="Only these years")
     back.add_argument("--refresh", action="store_true", help="Recompute every basin")
     back.add_argument("--workers", type=int, default=8, help="Parallel chunk downloads")
+    back.add_argument("--gauge", action="append", help="Recompute only these USGS site numbers")
     recent = sub.add_parser("recent", help="Hourly Stage IV basin rain since AORC ends")
     recent.add_argument("--max-hours", type=int, help="Process at most this many hours")
     recent.add_argument("--refresh", action="store_true", help="Recompute every hour")
@@ -371,6 +378,7 @@ def main() -> int:
             years=args.year,
             refresh=args.refresh,
             workers=args.workers,
+            sites=args.gauge,
         )
         log.info("Rain backfill: %s", stats)
     return 0

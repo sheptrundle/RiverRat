@@ -60,6 +60,7 @@ export function classLabel(raw: string): string {
 /** A runnable range, e.g. "500–2,500 cfs"; "…" for a missing bound. */
 export function rangeLabel(low: number | null, high: number | null, metric: string): string {
   const number = (v: number | null) => (v === null ? "…" : flow(v, metric).replace(/ (cfs|ft)$/, ""));
+  if (high === null && low !== null) return `${number(low)}+ ${metric}`;
   return `${number(low)}–${number(high)} ${metric}`;
 }
 

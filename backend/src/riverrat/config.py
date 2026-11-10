@@ -8,8 +8,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# Pilot region (DESIGN.md §15): Southern Appalachians plus VA/WV/MD.
-PILOT_STATES = ("NC", "TN", "GA", "SC", "KY", "VA", "WV", "MD")
+# Region (DESIGN.md §15): Southern Appalachians plus VA/WV/MD; PA/OH/NJ/NY from 2026-11-05.
+PILOT_STATES = ("NC", "TN", "GA", "SC", "KY", "VA", "WV", "MD", "PA", "OH", "NJ", "NY")
 
 
 class Settings(BaseSettings):

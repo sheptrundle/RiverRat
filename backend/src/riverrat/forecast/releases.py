@@ -227,6 +227,34 @@ HELD = {
     ),
 }
 
+# Reaches a dam brings into range, with no published release plan River Rat reads yet (AW
+# IDs). From June to October over the last 10 years, 30–60% of the times each came into
+# range were on days with under 5 mm of basin rain in the four days to then, against a
+# median of 0% across reaches, and the gauge has dam storage upstream (at least 6% of a
+# year's runoff): a rain forecast can't see those days. The last two (Abanakee and East
+# Branch Clarion) start at the dam and rarely reach their range at all without a release.
+# Rain still moves them in a storm, but a chance of running built on rain alone misses the
+# days they really run, so they get no chance instead. Each needs its own release source.
+DAM_RUN = frozenset(
+    {
+        1321,  # Hudson 1: Indian River to North River (the Gorge; Indian Lake releases)
+        1322,  # Hudson 2: North River to Riparius
+        1400,  # Sacandaga 2: below Stewarts Bridge
+        3576,  # Lehigh 3: Glen Onoko to East Penn
+        1622,  # Lehigh 4: below East Penn
+        1349,  # Mongaup: Rio powerhouse to the Delaware
+        11742,  # Clarion 3: Piney Dam to Foxview
+        11109,  # Youghiogheny 7: Bottom
+        11740,  # Youghiogheny 9: Dawson to Port Vue
+        1453,  # West Canada Creek: Trenton Falls to Herkimer
+        11753,  # Raquette: Helenbrooks Hole
+        3747,  # Raquette 3: Hannawa Falls
+        10650,  # Saranac: Permanent Rapids
+        1325,  # Indian: Abanakee Dam to the Hudson
+        11745,  # Clarion, East Branch: East Branch Dam
+    }
+)
+
 SCHEDULE_KEPT = 0.95  # a scheduled release can still be called off (power system, weather)
 PLACEMENTS = 13  # where in the day TVA's generating hours might fall, as forecast members
 

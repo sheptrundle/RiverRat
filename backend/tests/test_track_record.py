@@ -1,9 +1,10 @@
 from datetime import date, timedelta
 
 import pytest
+from sqlalchemy import func
 from test_whatif_api import NOW, add_rain_forecast, add_reach, client, lake  # noqa: F401
 
-from riverrat.db.models import ForecastArchive, Gauge, Observation
+from riverrat.db.models import ForecastArchive, Gauge, Observation, Reach
 from riverrat.jobs import outlook as outlook_jobs
 from riverrat.jobs import track_record as jobs
 
@@ -49,6 +50,27 @@ def test_a_day_is_scored_once_it_is_over(session, lake):  # noqa: F811
 
     later = jobs.score(session, NOW + timedelta(days=10))
     assert later.scored == 0 and later.unscorable >= 4  # no readings: given up on
+
+
+def test_a_gauge_without_a_location_is_scored_at_the_reach(session, lake):  # noqa: F811
+    reach_id, gauge_id = forecast(session, lake)
+    jobs.archive(session, NOW)
+    # As for an AW calculated gauge: no location of its own
+    session.get(Gauge, gauge_id).geom = None
+    session.get(Reach, reach_id).geom = func.ST_GeomFromText(
+        "LINESTRING(-81.1 38.05, -81.0 38.07)", 4326
+    )
+    day = NOW.replace(hour=12, minute=0)
+    for quarter in range(4 * 12):
+        at = day + timedelta(minutes=15 * quarter)
+        session.add(Observation(gauge_id=gauge_id, param="cfs", ts=at, value=220.0, approved=True))
+    session.commit()
+    assert jobs.score(session, NOW + timedelta(days=1)).scored == 1
+
+    session.get(Reach, reach_id).geom = None
+    session.commit()
+    stats = jobs.score(session, NOW + timedelta(days=2))
+    assert stats.scored == 0 and stats.unlocated == 1
 
 
 def test_track_record_endpoint(client, session, lake):  # noqa: F811

@@ -30,6 +30,7 @@ from pathlib import Path
 
 import numpy as np
 import pyarrow as pa
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -260,20 +261,19 @@ def run(
     cfs-rated reaches on each gauge, for runnability scores."""
     stats = HindcastStats()
     events_table = pq.read_table(event_jobs.events_path(data_dir))
-    by_site: dict[str, list[dict]] = defaultdict(list)
-    for row in events_table.to_pylist():
-        by_site[row["site"]].append(row)
-    rows: list[dict] = []
-    runnable_rows: list[dict] = []
-    for site in sorted(sites or by_site):
+    with_events = set(events_table["site"].unique().to_pylist())
+    # Columnar per gauge: years of storms at hundreds of gauges won't fit as Python dicts.
+    scores: list[pa.Table] = []
+    runnables: list[pa.Table] = []
+    for site in sorted(sites or with_events):
         path = event_jobs.hourly_path(data_dir, site)
-        if site not in by_site or not path.exists():
+        if site not in with_events or not path.exists():
             stats.skipped_gauges += 1
             continue
         table = pq.read_table(path).cast(hourly.HOURLY_SCHEMA)
         found, runnable = hindcast_gauge(
             site,
-            by_site[site],
+            events_table.filter(pc.equal(events_table["site"], site)).to_pylist(),
             table,
             areas.get(site),
             train_end=train_end,
@@ -283,37 +283,39 @@ def run(
         if not found:
             stats.skipped_gauges += 1
             continue
-        rows.extend(found)
-        runnable_rows.extend(runnable)
+        scores.append(pa.Table.from_pylist(found, schema=SCORE_SCHEMA))
+        runnables.append(pa.Table.from_pylist(runnable, schema=RUNNABLE_SCHEMA))
         stats.gauges += 1
         stats.storms += len(found) // len(MODELS)
-    write_parquet(skill_path(data_dir, *test), pa.Table.from_pylist(rows, schema=SCORE_SCHEMA))
-    write_parquet(
-        runnable_path(data_dir, *test),
-        pa.Table.from_pylist(runnable_rows, schema=RUNNABLE_SCHEMA),
-    )
-    _log_summary(rows)
-    _log_runnable(runnable_rows)
+        if stats.gauges % 50 == 0:
+            log.info("Hindcast: %d gauges, %d storms", stats.gauges, stats.storms)
+    score_table = pa.concat_tables([SCORE_SCHEMA.empty_table(), *scores])
+    runnable_table = pa.concat_tables([RUNNABLE_SCHEMA.empty_table(), *runnables])
+    write_parquet(skill_path(data_dir, *test), score_table)
+    write_parquet(runnable_path(data_dir, *test), runnable_table)
+    _log_summary(score_table)
+    _log_runnable(runnable_table)
     return stats
 
 
-def _log_summary(rows: list[dict]) -> None:
-    by_model: dict[str, list[dict]] = defaultdict(list)
-    for row in rows:
-        by_model[row["model"]].append(row)
+def _log_summary(table: pa.Table) -> None:
+    models = table["model"].to_numpy()
+    rain = table["rain_mm"].to_numpy()
+    crps_all, peak_crps = table["crps"].to_numpy(), table["peak_crps"].to_numpy()
+    peak_error, in_80 = table["peak_error"].to_numpy(), table["peak_in_80"].to_numpy()
     for model in MODELS:
-        scored = by_model.get(model, [])
-        if not scored:
+        scored = models == model
+        if not scored.any():
             continue
-        big = [r for r in scored if r["rain_mm"] >= 25.4]
+        big = scored & (rain >= 25.4)
         log.info(
             "%-12s crps %.3f  peak crps %.3f  peak error %+.3f (1 in+: %+.3f)  in 80%%: %.0f%%",
             model,
-            np.mean([r["crps"] for r in scored]),
-            np.mean([r["peak_crps"] for r in scored]),
-            np.mean([r["peak_error"] for r in scored]),
-            np.mean([r["peak_error"] for r in big]) if big else float("nan"),
-            100 * np.mean([r["peak_in_80"] for r in scored]),
+            crps_all[scored].mean(),
+            peak_crps[scored].mean(),
+            peak_error[scored].mean(),
+            peak_error[big].mean() if big.any() else float("nan"),
+            100 * in_80[scored].mean(),
         )
 
 
@@ -338,13 +340,14 @@ def reliability(p: np.ndarray, outcome: np.ndarray, bins: int = 5) -> list[tuple
     ]
 
 
-def _log_runnable(rows: list[dict]) -> None:
+def _log_runnable(table: pa.Table) -> None:
+    models = table["model"].to_numpy()
+    all_p, all_outcome = table["p_runnable"].to_numpy(), table["runnable"].to_numpy().astype(float)
     for model in MODELS:
-        scored = [r for r in rows if r["model"] == model]
-        if not scored:
+        scored = models == model
+        if not scored.any():
             continue
-        p = np.array([r["p_runnable"] for r in scored])
-        outcome = np.array([r["runnable"] for r in scored], float)
+        p, outcome = all_p[scored], all_outcome[scored]
         bins = "  ".join(f"{m:.0%}→{o:.0%} (n={n})" for _, _, n, m, o in reliability(p, outcome))
         log.info("%-12s runnable brier %.3f  forecast→observed: %s", model, brier(p, outcome), bins)
 

@@ -277,6 +277,15 @@ def test_reaches_that_cant_be_forecast(client, session):
     assert detail == f"gauge {SITE} stopped reporting flow in 2025 (USGS discontinued it)"
 
 
+def test_a_reach_that_dams_bring_in_gets_no_chance(client, session):
+    reach_id = add_reach(session)
+    session.get(Reach, reach_id).aw_id = 1321  # the Hudson Gorge (releases.DAM_RUN)
+    session.commit()
+    response = client.get(f"/api/reaches/{reach_id}/whatif")
+    assert response.status_code == 409
+    assert "dam releases" in response.json()["detail"]
+
+
 def test_a_dam_release_reach_says_so(client, session):
     reach = Reach(river="Gauley", section="Summersville Dam to Woods Ferry", states=["USA-WVR"])
     dam = Gauge(source="CALCULATED", source_id="1", name="Gauley at Summersville (cfs)")
@@ -397,6 +406,21 @@ def test_range_history_and_ranges_that_look_wrong(client, session):
     history = client.get(f"/api/reaches/{reach_id}/whatif").json()["history"]
     assert (history["share_in_range"], history["note"]) == (0.0, "below_record")
     assert all(m["too_high"] == 1 for m in history["months"] if m is not None)
+
+
+def test_a_placeholder_range_top_means_no_upper_limit(client, session):
+    reach_id = add_reach(session)
+    link = session.query(ReachGauge).one()
+    link.range_max = 99999.0  # AW's "no upper limit", far above anything this river does
+    session.commit()
+    bands = client.get(f"/api/reaches/{reach_id}/whatif").json()["bands"]
+    assert (bands["minimum"], bands["maximum"]) == (150.0, None)
+    listed = next(r for r in client.get("/api/reaches").json() if r["id"] == reach_id)
+    assert listed["range_max"] == 99999.0  # no Outlook run yet: AW's range as given
+
+    link.range_max = 400.0  # a real top stays
+    session.commit()
+    assert client.get(f"/api/reaches/{reach_id}/whatif").json()["bands"]["maximum"] == 400.0
 
 
 # --- reaches without a gauge -----------------------------------------------------------

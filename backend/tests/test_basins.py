@@ -151,3 +151,74 @@ def test_unindexed_gauges_fall_back_to_the_reach_at_their_location(session):
     assert (stats.fetched, stats.by_position, stats.missing) == (1, 1, 1)
     stored = session.execute(select(Gauge.source_id).join(Basin, Basin.gauge_id == Gauge.id)).all()
     assert [s for (s,) in stored] == ["A"]
+
+
+# --- repairs from StreamStats -----------------------------------------------------------
+
+
+def streamstats_transport(polygons):
+    """StreamStats: `polygons` maps a "lon lat" point to the watershed there."""
+    calls = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        point = f"{request.url.params['lon']} {request.url.params['lat']}"
+        calls.append(point)
+        polygon = polygons.get(point)
+        if polygon is None:
+            return httpx2.Response(200, json={"bcrequest": {"wsresp": {"featurecollection": []}}})
+        feature = {"type": "Feature", "properties": {"GlobalWshd": 1}, "geometry": polygon}
+        return httpx2.Response(
+            200, json={"bcrequest": {"wsresp": {"featurecollection": [["w", feature]]}}}
+        )
+
+    return httpx2.MockTransport(handler), calls
+
+
+def add_mismatched(session, number="01234567", at=(-80.0, 38.0)):
+    """A gauge whose NLDI basin is 4 times the published area."""
+    drainage = square_area_sqmi(38.0)
+    gauge_id = add_gauge(session, number, drainage=drainage, at=at).id
+    run(FakeNLDI({number: square(-80.0, 38.0, 0.2)}), session)
+    session.query(Gauge).filter_by(id=gauge_id).update({"state_code": "51"})
+    session.commit()
+    return gauge_id
+
+
+def repair(session, transport):
+    with PoliteClient("test", 0, transport=transport) as client:
+        return jobs.repair_basins(client, session)
+
+
+def test_a_wrong_basin_is_repaired_and_a_refresh_leaves_it(session):
+    gauge_id = add_mismatched(session)
+    transport, calls = streamstats_transport({"-80.0 38.0": square(-80.0, 38.0)})
+    stats = repair(session, transport)
+    assert (stats.tried, stats.repaired, stats.repaired_sites) == (1, 1, ["01234567"])
+    assert len(calls) == 1  # good on the first try
+    basin = session.get(Basin, gauge_id)
+    session.refresh(basin)
+    assert basin.source == "streamstats"
+    assert basin.area_ratio == pytest.approx(1, abs=0.02)
+
+    fake = FakeNLDI({"01234567": square(-80.0, 38.0, 0.2)})
+    assert run(fake, session, refresh=True).fetched == 0
+    session.refresh(basin)
+    assert basin.source == "streamstats"
+
+
+def test_a_point_off_the_stream_grid_is_nudged(session):
+    add_mismatched(session)
+    transport, calls = streamstats_transport(
+        {"-80.0 38.0": square(-80.0, 38.0, 0.001), "-79.999 38.0": square(-80.0, 38.0)}
+    )
+    assert repair(session, transport).repaired == 1
+    assert len(calls) == 2
+
+
+def test_a_basin_stays_when_nothing_is_closer(session):
+    gauge_id = add_mismatched(session)
+    transport, calls = streamstats_transport({})
+    stats = repair(session, transport)
+    assert (stats.repaired, stats.unchanged) == (0, 1)
+    assert len(calls) == 1 + len(jobs.NUDGES)
+    assert session.get(Basin, gauge_id).source == "nldi"

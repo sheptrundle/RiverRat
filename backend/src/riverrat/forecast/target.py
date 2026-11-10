@@ -34,6 +34,10 @@ DISCONTINUED_AFTER = timedelta(days=60)
 # Below dams on a live gauge of its own: hours for the gap between the gauge's reading and
 # the sum of the parts to fade (to 1/e)
 ANCHOR_FADE_H = 24
+# AW sometimes fills in a range's top with a placeholder for "no upper limit" (20000 ft,
+# 99999 cfs). A top this many times the gauge's highest reading in its last 10 years is
+# taken as one, and the range as open-ended.
+PLACEHOLDER_TOP = 5.0
 
 
 class NoForecast(Exception):
@@ -125,6 +129,11 @@ class Target:
 
 
 def target(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Target:
+    if reach.aw_id in releases.DAM_RUN:
+        raise NoForecast(
+            "dam releases, more than rain, bring this section into range, often on dry days, "
+            "and River Rat doesn't have its release schedule yet"
+        )
     if reach.aw_id in releases.TVA_REACHES:
         return _tva(session, reach, releases.TVA_REACHES[reach.aw_id], now)
     # Each linked gauge, or for an NWS location its USGS twin at the same place.
@@ -214,6 +223,7 @@ def target(session: Session, data_dir: Path, reach: Reach, now: datetime) -> Tar
                     f"gauge {gauge.source_id} has no reading in the last 48 hours (it may be down)"
                 )
             continue
+        bands = _without_placeholder_top(bands, data_dir, gauge.source_id, to_units)
         return Target(reach, gauge, bands, lat, lon, library, current, to_units, link.is_primary)
     raise NoForecast(problem)
 
@@ -421,6 +431,19 @@ def _estimate(session: Session, data_dir: Path, reach: Reach, now: datetime) -> 
     raise NoForecast(
         f"the reach has no gauge, and no similar gauge within {estimate.DONOR_MAX_KM:.0f} km"
     )
+
+
+def _without_placeholder_top(bands: Bands, data_dir: Path, site: str, to_units: Callable) -> Bands:
+    """The range with AW's placeholder top (PLACEHOLDER_TOP) dropped, if it has one."""
+    if bands.maximum is None or bands.minimum is None:
+        return bands
+    daily = store.daily_range(data_dir, site)
+    if daily is None or not len(daily[1]):
+        return bands
+    highest = float(np.nanmax(np.asarray(to_units(daily[1]), float)))
+    if bands.maximum > PLACEHOLDER_TOP * highest:
+        return Bands(bands.metric, bands.minimum, None)
+    return bands
 
 
 def _identity(cfs):

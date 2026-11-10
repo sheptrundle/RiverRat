@@ -215,8 +215,6 @@ export default function ReachPage({ reachId }: { reachId: number }) {
         <p className="muted small">Chance of being in range at some point during daylight. Bars: where the day's peak lands, too low → too high.</p>
       </div>
 
-      {w.history && <SeasonChart months={w.history.months} />}
-
       {rr && dayCurve && (
         <div className="panel">
           <h3>
@@ -275,6 +273,8 @@ export default function ReachPage({ reachId }: { reachId: number }) {
           <p className="muted small">The forecast replays the 60 most similar storms at this gauge, scaled to this storm's rain and today's flow.</p>
         </div>
       )}
+
+      {w.history && <SeasonChart months={w.history.months} />}
     </section>
   );
 }
