@@ -1100,6 +1100,9 @@ h2 .star {
   line-height: 1;
   cursor: pointer;
 }
+.map-card-label {
+  margin: 0 0 2px;
+}
 .map-card-days {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));

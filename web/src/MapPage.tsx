@@ -3,7 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BandName, Outlook, OutlookReach } from "./api";
 import { useApi } from "./api";
-import { BAND_LABELS, classLabel, flow, percent, weekday } from "./format";
+import { BAND_LABELS, classLabel, flow, flowNumber, percent, weekday } from "./format";
 import { sectionLabel } from "./tables";
 
 // GET /api/map (backend/src/riverrat/api/reach_map.py)
@@ -226,7 +226,7 @@ export default function MapPage() {
       </div>
       <p className="muted small">
         River courses from American Whitewater. Dashed: no forecast (no gauge, or a dam River Rat can't forecast). Tap a river
-        for its chances; the reach page has the full forecast.
+        for its predicted flows; the reach page has the full forecast.
       </p>
     </section>
   );
@@ -284,14 +284,16 @@ function ReachCard({
             Now: <strong>{flow(found.now_value, found.metric)}</strong>, {BAND_LABELS[found.now_band].toLowerCase()}
             {found.estimate ? " (estimated)" : ""}
           </p>
+          <p className="small muted map-card-label">Predicted daytime peak ({found.metric === "ft" ? "ft" : "cfs"}, median)</p>
           <div className="map-card-days">
             {found.days.map((d, i) => (
-              <span key={d.day} className={d.day === view ? "on" : ""}>
+              <span key={d.day} className={d.day === view ? "on" : ""} title={`${percent(d.p_runnable)} chance it runs`}>
                 <span className="muted">{i === 0 ? "Today" : weekday(d.day)}</span>
-                <strong>{percent(d.p_runnable)}</strong>
+                <strong>{flowNumber(d.peak.p50, found.metric)}</strong>
               </span>
             ))}
           </div>
+          {day && <p className="small">{percent(day.p_runnable)} chance it runs {view === found.days[0]?.day ? "today" : `on ${weekday(day.day)}`}</p>}
           {day && day.p_too_high_all_day >= 0.05 && (
             <p className="small warning">{percent(day.p_too_high_all_day)} chance it's too high all day</p>
           )}

@@ -11,9 +11,14 @@ export const BAND_LABELS: Record<BandName, string> = {
 export const HOUR_MS = 3_600_000;
 
 export function flow(value: number, metric: string): string {
-  if (metric === "ft") return `${value.toFixed(2)} ft`;
+  return `${flowNumber(value, metric)} ${metric === "ft" ? "ft" : "cfs"}`;
+}
+
+/** A flow without its unit, for tight spaces that state the unit once. */
+export function flowNumber(value: number, metric: string): string {
+  if (metric === "ft") return value.toFixed(2);
   const rounded = value >= 1000 ? Math.round(value / 10) * 10 : Math.round(value);
-  return `${rounded.toLocaleString()} cfs`;
+  return rounded.toLocaleString();
 }
 
 export function percent(p: number): string {
