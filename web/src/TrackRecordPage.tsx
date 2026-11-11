@@ -6,6 +6,9 @@ import { sectionLabel } from "./tables";
 
 // The day-before calls list (hits and misses) is hidden for now; flip to bring it back.
 const SHOW_RECENT_CALLS = false;
+// The perfect-rain hindcast (DESIGN.md §6.4, jobs/hindcast.py): the analog model's hourly CRPS
+// against replaying all of a gauge's past storms alike, library ≤ 2019. Update with each rerun.
+const BACKTEST = { lowerError: "39%", storms: "177,000", years: "2020–25" };
 const LEAD_LABELS = ["That day", "1 day ahead", "2 days", "3 days", "4 days", "5 days"];
 
 /** How the Outlook's chances have held up against what the rivers did. */
@@ -18,7 +21,6 @@ export default function TrackRecordPage() {
 
   const confident = pool(data.reliability, 0.7, 0.9);
   const unlikely = pool(data.reliability, 0, 0.1);
-  const twoDays = data.leads.find((l) => l.lead_days === 2);
   const shownCalls = data.recent.filter((c) =>
     calls === "all" ? true : calls === "hits" ? hit(c.p_runnable, c.observed) : !hit(c.p_runnable, c.observed),
   );
@@ -65,14 +67,15 @@ export default function TrackRecordPage() {
                 </span>
               </div>
             )}
-            {twoDays?.skill != null && (
-              <div className="panel stat">
-                <span className="big">{signed(twoDays.skill)}</span>
-                <span>
-                  better than "it'll stay where it is," 2 days ahead <span className="muted">(Brier score)</span>
+            <div className="panel stat">
+              <span className="big">{BACKTEST.lowerError}</span>
+              <span>
+                lower error than replaying a river's typical storm response{" "}
+                <span className="muted">
+                  (back-tested on {BACKTEST.storms} storms, {BACKTEST.years}, given the rain that fell)
                 </span>
-              </div>
-            )}
+              </span>
+            </div>
           </div>
 
           <div className="track-charts">
