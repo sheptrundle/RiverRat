@@ -3,11 +3,13 @@ come from /api/outlook, which the page joins on the reach id."""
 
 import json
 
-from fastapi import APIRouter, Response
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
-from riverrat.api.reaches import SessionDep
+from riverrat.api import cache
+from riverrat.api.reaches import SessionDep, catalog_version
 from riverrat.db.models import Reach
 
 router = APIRouter(prefix="/api/map", tags=["map"])
@@ -28,10 +30,15 @@ class ReachMap(BaseModel):
     reaches: list[MapReach]
 
 
-@router.get("")
-def get_map(session: SessionDep, response: Response) -> ReachMap:
+@router.get("", response_model=ReachMap)
+def get_map(request: Request, session: SessionDep) -> Response:
+    response = cache.respond(CACHED, request, session)
     # Courses change only with the weekly AW sync.
     response.headers["Cache-Control"] = "public, max-age=3600"
+    return response
+
+
+def _build(session: Session) -> ReachMap:
     shape = func.ST_AsGeoJSON(func.ST_SimplifyPreserveTopology(Reach.geom, SIMPLIFY_DEG), DIGITS)
     rows = session.execute(
         select(Reach.id, Reach.river, Reach.section, Reach.difficulty_raw, shape)
@@ -53,3 +60,6 @@ def get_map(session: SessionDep, response: Response) -> ReachMap:
             )
         )
     return ReachMap(reaches=reaches)
+
+
+CACHED = cache.register("map", catalog_version, _build)

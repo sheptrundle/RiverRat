@@ -33,3 +33,6 @@ web/dist/
 # Deploy bundles (infra/bundle.sh) hold the database and model data
 /deploy-bundle/
 /deploy/
+
+# Personal notes
+/NOTES.md

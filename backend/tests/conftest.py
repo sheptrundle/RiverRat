@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, make_url, text
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
+from riverrat.api import cache
 from riverrat.config import Settings
 
 TEST_DATABASE = "riverrat_test"
@@ -52,3 +53,11 @@ def session(db_engine):
         conn.execute(text(f"TRUNCATE {tables} RESTART IDENTITY CASCADE"))
     with Session(db_engine) as session:
         yield session
+
+
+@pytest.fixture(autouse=True)
+def _empty_response_cache():
+    """Cached API responses (api/cache.py) mustn't carry over between tests."""
+    cache.clear()
+    yield
+    cache.clear()

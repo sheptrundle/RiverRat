@@ -3,10 +3,12 @@ next days, as last computed by jobs/outlook.py."""
 
 from datetime import date, datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
+from riverrat.api import cache
 from riverrat.api.reaches import Peak, RainRange, SessionDep
 from riverrat.db.models import Gauge, Reach, ReachOutlook
 
@@ -81,8 +83,12 @@ class Outlook(BaseModel):
     reaches: list[OutlookReach]
 
 
-@router.get("")
-def get_outlook(session: SessionDep) -> Outlook:
+def outlook_version(session: Session) -> tuple:
+    """Changes with every Outlook run (jobs/outlook.py replaces all rows in one commit)."""
+    return tuple(session.execute(select(func.max(ReachOutlook.computed_at), func.count())).one())
+
+
+def _build(session: Session) -> Outlook:
     rows = session.execute(
         select(ReachOutlook, Reach, Gauge.source_id)
         .join(Reach, Reach.id == ReachOutlook.reach_id)
@@ -128,3 +134,11 @@ def get_outlook(session: SessionDep) -> Outlook:
         whatif_rain_in=whatif["rain_in"] if whatif else [],
         reaches=reaches,
     )
+
+
+CACHED = cache.register("outlook", outlook_version, _build)
+
+
+@router.get("", response_model=Outlook)
+def get_outlook(request: Request, session: SessionDep) -> Response:
+    return cache.respond(CACHED, request, session)

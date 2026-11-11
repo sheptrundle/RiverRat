@@ -4,10 +4,12 @@
 from datetime import date, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import case, func, select
+from sqlalchemy.orm import Session
 
+from riverrat.api import cache
 from riverrat.api.reaches import SessionDep
 from riverrat.db.models import ForecastArchive, Reach
 
@@ -56,11 +58,30 @@ class TrackRecord(BaseModel):
     recent: list[Call]  # the day-before calls of the last few scored days
 
 
-@router.get("")
+def scores_version(session: Session) -> tuple:
+    """Changes whenever days are scored (jobs/track_record.py)."""
+    return tuple(
+        session.execute(
+            select(func.count(ForecastArchive.scored_at), func.max(ForecastArchive.scored_at))
+        ).one()
+    )
+
+
+@router.get("", response_model=TrackRecord)
 def get_track_record(
+    request: Request,
     session: SessionDep,
     state: str | None = None,
     reaches: Annotated[str | None, Query(description="Comma-separated reach IDs")] = None,
+) -> Response:
+    if not state and not reaches:  # the Track record page: cached
+        return cache.respond(CACHED, request, session)
+    body = _summarize(session, state, reaches).model_dump_json()
+    return Response(body, media_type="application/json")
+
+
+def _summarize(
+    session: Session, state: str | None = None, reaches: str | None = None
 ) -> TrackRecord:
     scored = [ForecastArchive.observed.is_not(None)]
     if state:
@@ -144,3 +165,6 @@ def get_track_record(
         reliability=reliability,
         recent=recent,
     )
+
+
+CACHED = cache.register("track-record", scores_version, _summarize)

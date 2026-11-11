@@ -10,11 +10,12 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 import numpy as np
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from riverrat.api import cache
 from riverrat.config import get_settings
 from riverrat.db.models import (
     DamNotice,
@@ -347,9 +348,31 @@ def _day_out(day: Day) -> DayOut:
 # --- endpoints -----------------------------------------------------------------------
 
 
-@router.get("")
-def list_reaches(session: SessionDep) -> list[ReachSummary]:
+def catalog_version(session: Session) -> tuple:
+    """Changes when reaches or their gauge links do (the AW sync, a data deploy)."""
+    return tuple(
+        session.execute(
+            select(
+                func.count(Reach.id),
+                func.max(Reach.scraped_at),
+                select(func.count(ReachGauge.reach_id)).scalar_subquery(),
+            )
+        ).one()
+    )
+
+
+def _reach_list_version(session: Session) -> tuple:
+    outlook = session.execute(select(func.max(ReachOutlook.computed_at), func.count())).one()
+    return (*catalog_version(session), *outlook)
+
+
+@router.get("", response_model=list[ReachSummary])
+def list_reaches(request: Request, session: SessionDep) -> Response:
     """Every reach with its primary gauge and runnable range (no forecasts)."""
+    return cache.respond(REACH_LIST, request, session)
+
+
+def _build_reach_list(session: Session) -> list[ReachSummary]:
     rows = session.execute(
         select(
             Reach, Gauge.source_id, ReachGauge.metric, ReachGauge.range_min, ReachGauge.range_max
@@ -378,6 +401,9 @@ def list_reaches(session: SessionDep) -> list[ReachSummary]:
                 range_max=high,
             )
     return list(out.values())
+
+
+REACH_LIST = cache.register("reaches", _reach_list_version, _build_reach_list)
 
 
 @router.get("/{reach_id}/whatif")
